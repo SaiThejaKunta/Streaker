@@ -1,0 +1,177 @@
+// ============================================================
+// STREAKER — Activity / Notifications Screen
+// ============================================================
+
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import {
+  Card,
+  Avatar,
+  Badge,
+  CoinDisplay,
+  SectionHeader,
+  EmptyState,
+  Button,
+  Divider,
+} from '../../../components/ui';
+import { useActivityStore } from '../../../store/useActivityStore';
+import { MOCK_ACTIVITIES, MOCK_INVITATIONS, MOCK_USERS, MOCK_STREAKS, MOCK_CURRENT_USER } from '../../../utils/mockData';
+import { getRelativeTime } from '../../../utils/helpers';
+
+type Tab = 'all' | 'invites';
+
+export default function ActivityScreen() {
+  const { activities, invitations, loadActivities, loadInvitations, isLoading, acceptInvitation, declineInvitation } =
+    useActivityStore();
+  const [activeTab, setActiveTab] = useState<Tab>('all');
+
+  useEffect(() => {
+    loadActivities();
+    loadInvitations();
+  }, []);
+
+  const allUsers = [MOCK_CURRENT_USER, ...MOCK_USERS];
+  const pendingInvites = invitations.filter((inv) => inv.status === 'pending');
+
+  return (
+    <View className="flex-1 bg-[#0F0F1A]">
+      {/* Header */}
+      <View className="px-5 pt-14 pb-4">
+        <Text className="text-white text-2xl font-bold">Activity 🔔</Text>
+
+        {/* Tabs */}
+        <View className="flex-row mt-4 gap-2">
+          <TouchableOpacity
+            className={`flex-1 py-2.5 rounded-xl items-center ${
+              activeTab === 'all' ? 'bg-orange-500' : 'bg-[#1A1A2E] border border-[#2A2A45]'
+            }`}
+            onPress={() => setActiveTab('all')}
+          >
+            <Text className={`text-sm font-semibold ${activeTab === 'all' ? 'text-white' : 'text-gray-400'}`}>
+              📋 All Activity
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className={`flex-1 py-2.5 rounded-xl items-center flex-row justify-center gap-1 ${
+              activeTab === 'invites' ? 'bg-orange-500' : 'bg-[#1A1A2E] border border-[#2A2A45]'
+            }`}
+            onPress={() => setActiveTab('invites')}
+          >
+            <Text className={`text-sm font-semibold ${activeTab === 'invites' ? 'text-white' : 'text-gray-400'}`}>
+              ✉️ Invites
+            </Text>
+            {pendingInvites.length > 0 && (
+              <View className="bg-red-500 rounded-full w-5 h-5 items-center justify-center">
+                <Text className="text-white text-[10px] font-bold">{pendingInvites.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={
+          <RefreshControl refreshing={isLoading} onRefresh={() => { loadActivities(); loadInvitations(); }} tintColor="#FF6B35" />
+        }
+      >
+        {activeTab === 'all' && (
+          <View className="px-5">
+            {activities.length === 0 ? (
+              <EmptyState emoji="📭" title="No Activity Yet" description="When your friends check in or you earn achievements, they'll show up here." />
+            ) : (
+              activities.map((act) => {
+                const user = allUsers.find((u) => u.id === act.user_id);
+                const streak = MOCK_STREAKS.find((s) => s.id === act.streak_id);
+                if (!user) return null;
+
+                const getActivityIcon = () => {
+                  switch (act.type) {
+                    case 'check_in': return '✅';
+                    case 'missed': return '❌';
+                    case 'milestone': return '🏅';
+                    case 'streak_created': return '🆕';
+                    case 'streak_joined': return '🤝';
+                    case 'streak_completed': return '🎉';
+                    default: return '📌';
+                  }
+                };
+
+                const getActivityText = () => {
+                  switch (act.type) {
+                    case 'check_in': return `checked in to ${streak?.name || 'a streak'}`;
+                    case 'missed': return `missed ${streak?.name || 'a streak'}`;
+                    case 'milestone': return `reached ${(act.data as any)?.milestone}-day milestone!`;
+                    case 'streak_created': return `created "${(act.data as any)?.streak_name}"`;
+                    case 'streak_joined': return `joined ${streak?.name || 'a streak'}`;
+                    default: return 'had activity';
+                  }
+                };
+
+                return (
+                  <View key={act.id} className="flex-row items-start mb-4">
+                    <View className="w-9 h-9 rounded-full bg-[#1A1A2E] items-center justify-center mr-3 mt-0.5 border border-[#2A2A45]">
+                      <Text className="text-sm">{getActivityIcon()}</Text>
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-gray-300 text-sm">
+                        <Text className="text-white font-semibold">{user.display_name}</Text>
+                        {' '}{getActivityText()}
+                      </Text>
+                      {act.type === 'check_in' && Boolean((act.data as any)?.note) ? (
+                        <Text className="text-gray-500 text-xs mt-1 italic">
+                          "{(act.data as any).note}"
+                        </Text>
+                      ) : null}
+                      <Text className="text-gray-500 text-xs mt-1">
+                        {getRelativeTime(act.created_at)}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        )}
+
+        {activeTab === 'invites' && (
+          <View className="px-5">
+            {pendingInvites.length === 0 ? (
+              <EmptyState emoji="✉️" title="No Pending Invites" description="When someone invites you to a streak, it'll appear here." />
+            ) : (
+              pendingInvites.map((inv) => {
+                const inviter = allUsers.find((u) => u.id === inv.inviter_id);
+                const streak = MOCK_STREAKS.find((s) => s.id === inv.streak_id);
+                return (
+                  <Card key={inv.id} className="mb-3">
+                    <View className="flex-row items-center mb-3">
+                      <Avatar uri={inviter?.avatar_url} name={inviter?.display_name || '?'} size="sm" className="mr-3" />
+                      <View className="flex-1">
+                        <Text className="text-white font-semibold">{inviter?.display_name}</Text>
+                        <Text className="text-gray-400 text-xs">invited you to join</Text>
+                      </View>
+                    </View>
+                    <View className="bg-[#252542] rounded-xl p-3 mb-3">
+                      <View className="flex-row items-center gap-2">
+                        <Text className="text-xl">{streak?.emoji || '🔥'}</Text>
+                        <Text className="text-white font-semibold">{streak?.name || 'Unknown Streak'}</Text>
+                      </View>
+                      <Text className="text-gray-400 text-xs mt-1">
+                        {streak?.target_days} days · {streak?.coin_buy_in} 🪙 buy-in
+                      </Text>
+                    </View>
+                    <View className="flex-row gap-3">
+                      <Button title="Decline" variant="outline" onPress={() => declineInvitation(inv.id)} className="flex-1" size="sm" />
+                      <Button title="Accept 🔥" onPress={() => acceptInvitation(inv.id)} className="flex-1" size="sm" />
+                    </View>
+                  </Card>
+                );
+              })
+            )}
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}

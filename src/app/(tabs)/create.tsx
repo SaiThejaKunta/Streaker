@@ -71,7 +71,19 @@ export default function CreateStreakScreen() {
       // Success haptic
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
-      router.replace(`/streak/${newStreak.id}`);
+      // Reset form
+      setForm({
+        name: '',
+        emoji: '🔥',
+        description: '',
+        target_days: 30,
+        is_group: false,
+        is_public: true,
+        reminder_time: '20:00',
+        invitee_ids: [],
+      });
+      
+      router.push(`/streak/${newStreak.id}` as any);
     } catch (err: any) {
       Alert.alert('Error', err.message);
     }

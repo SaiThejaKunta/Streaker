@@ -10,7 +10,7 @@ import {
   RefreshControl,
   TouchableOpacity,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useStreakStore } from '../../../store/useStreakStore';
 import {
@@ -27,6 +27,12 @@ export default function HomeScreen() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const { loadStreaks, getMyStreaks, isLoading, checkIns } = useStreakStore();
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadStreaks();
+    }, [])
+  );
 
   const myStreaks = getMyStreaks();
   const groupStreaks = myStreaks.filter((s) => s.is_group);

@@ -49,16 +49,16 @@ export default function RootLayout() {
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
-          name="streak/[id]"
-          options={{ headerShown: false, animation: 'slide_from_right' }}
-        />
-        <Stack.Screen
           name="streak/check-in"
           options={{
             headerShown: false,
             animation: 'slide_from_bottom',
             presentation: 'modal',
           }}
+        />
+        <Stack.Screen
+          name="streak/[id]"
+          options={{ headerShown: false, animation: 'slide_from_right' }}
         />
         <Stack.Screen
           name="profile/[userId]"

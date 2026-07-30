@@ -25,7 +25,9 @@ interface StreakState {
   getUserCheckIns: (streakId: string, userId: string) => CheckIn[];
   getCalendarDays: (streakId: string, userId: string) => CalendarDay[];
   hasCheckedInToday: (streakId: string, userId: string) => boolean;
+  getTodayCheckInStatus: (streakId: string, userId: string) => 'pending' | 'verified' | 'rejected' | null;
   createStreak: (form: CreateStreakForm) => Promise<Streak>;
+  deleteStreak: (streakId: string) => Promise<void>;
   checkIn: (streakId: string, proofImageUrl?: string, note?: string) => Promise<CheckIn>;
   clearError: () => void;
 }
@@ -187,6 +189,17 @@ export const useStreakStore = create<StreakState>((set, get) => ({
     );
   },
 
+  getTodayCheckInStatus: (streakId: string, userId: string) => {
+    const today = getToday();
+    const checkIn = get().checkIns.find(
+      (ci) =>
+        ci.streak_id === streakId &&
+        ci.user_id === userId &&
+        ci.check_in_date === today
+    );
+    return checkIn ? checkIn.status : null;
+  },
+
   createStreak: async (form: CreateStreakForm) => {
     set({ isLoading: true, error: null });
     try {
@@ -292,6 +305,28 @@ export const useStreakStore = create<StreakState>((set, get) => ({
     }
   },
 
+  deleteStreak: async (streakId: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const user = useAuthStore.getState().user;
+      if (!user) throw new Error('Not authenticated');
+
+      const { error } = await supabase.rpc('delete_streak', { p_streak_id: streakId });
+      
+      if (error) throw error;
+
+      // Update local state
+      set((state) => ({
+        streaks: state.streaks.filter((s) => s.id !== streakId),
+        streakMembers: state.streakMembers.filter((m) => m.streak_id !== streakId),
+        isLoading: false
+      }));
+    } catch (err: any) {
+      set({ error: err.message, isLoading: false });
+      throw err;
+    }
+  },
+
   checkIn: async (streakId: string, proofImageUrl?: string, note?: string) => {
     set({ error: null });
     try {
@@ -311,60 +346,79 @@ export const useStreakStore = create<StreakState>((set, get) => ({
       const newStreakCount = member.current_streak_count + 1;
       const coinsEarned = calculateDailyReward(newStreakCount, streak.is_group);
 
+      const isGroup = streak.is_group;
+      const initialStatus = isGroup ? 'pending' : 'verified';
+
       // 1. Insert Check-in
       const { data: checkInData, error: checkInErr } = await supabase
         .from('check_ins')
         .insert({
           streak_id: streakId,
           user_id: user.id,
-          note: note
+          note: note,
+          status: initialStatus
         })
         .select()
         .single();
       
       if (checkInErr) throw checkInErr;
 
-      // 2. Update Streak Member
-      const { error: upMemErr } = await supabase
-        .from('streak_members')
-        .update({
-          current_count: newStreakCount,
-          longest_count: Math.max(member.longest_count || 0, newStreakCount)
-        })
-        .eq('id', member.id);
-      
-      if (upMemErr) throw upMemErr;
-
-      // 3. Activity feed
-      await supabase.from('activities').insert({
-        user_id: user.id,
-        streak_id: streakId,
-        type: 'check_in',
-        data: { note, coins: coinsEarned }
-      });
-
       const newCheckIn: CheckIn = {
         ...checkInData,
         check_in_date: checkInData.created_at.split('T')[0],
       } as CheckIn;
 
-      // Update local state
+      // Update local state for check-in immediately so UI reflects it
       set((state) => ({
-        checkIns: [newCheckIn, ...state.checkIns],
-        streakMembers: state.streakMembers.map((sm) =>
-          sm.id === member.id
-            ? {
-                ...sm,
-                current_streak_count: newStreakCount,
-                coins_earned: sm.coins_earned + coinsEarned,
-                longest_count: Math.max(sm.longest_count || 0, newStreakCount)
-              }
-            : sm
-        ),
+        checkIns: [newCheckIn, ...state.checkIns]
       }));
 
-      // Update user coin balance
-      await useAuthStore.getState().updateCoinBalance(coinsEarned);
+      if (isGroup) {
+        // Just insert a verification request activity, do NOT update counts/coins yet
+        await supabase.from('activities').insert({
+          user_id: user.id,
+          streak_id: streakId,
+          type: 'verification_request',
+          data: { check_in_id: checkInData.id, note }
+        });
+      } else {
+        // Solo streak: instantly verify
+        // 2. Update Streak Member
+        const { error: upMemErr } = await supabase
+          .from('streak_members')
+          .update({
+            current_count: newStreakCount,
+            longest_count: Math.max(member.longest_count || 0, newStreakCount)
+          })
+          .eq('id', member.id);
+        
+        if (upMemErr) throw upMemErr;
+
+        // 3. Activity feed
+        await supabase.from('activities').insert({
+          user_id: user.id,
+          streak_id: streakId,
+          type: 'check_in',
+          data: { note, coins: coinsEarned }
+        });
+
+        // Update local state for counts/coins
+        set((state) => ({
+          streakMembers: state.streakMembers.map((sm) =>
+            sm.id === member.id
+              ? {
+                  ...sm,
+                  current_streak_count: newStreakCount,
+                  coins_earned: sm.coins_earned + coinsEarned,
+                  longest_count: Math.max(sm.longest_count || 0, newStreakCount)
+                }
+              : sm
+          ),
+        }));
+
+        // Update user coin balance
+        await useAuthStore.getState().updateCoinBalance(coinsEarned);
+      }
 
       return newCheckIn;
     } catch (err: any) {

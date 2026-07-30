@@ -18,11 +18,11 @@ interface StreakCardProps {
 
 export function StreakCard({ streak }: StreakCardProps) {
   const router = useRouter();
-  const { hasCheckedInToday } = useStreakStore();
+  const { getTodayCheckInStatus } = useStreakStore();
   const userId = useAuthStore((s) => s.user?.id) || '';
   const currentDay = getCurrentDayNumber(streak.start_date);
   const progress = getStreakProgress(streak.start_date, streak.target_days);
-  const checkedInToday = hasCheckedInToday(streak.id, userId);
+  const checkInStatus = getTodayCheckInStatus(streak.id, userId);
   const members = streak.members || [];
   const myMembership = streak.my_membership;
 
@@ -48,14 +48,16 @@ export function StreakCard({ streak }: StreakCardProps) {
         </View>
 
         {/* Status badge */}
-        {checkedInToday ? (
+        {checkInStatus === 'verified' ? (
           <Badge label="Done ✅" variant="success" />
+        ) : checkInStatus === 'pending' ? (
+          <Badge label="Pending ⏳" variant="warning" />
         ) : (
           <TouchableOpacity
             className="bg-orange-500 px-4 py-2 rounded-xl"
             onPress={(e) => {
               e.stopPropagation?.();
-              router.push(`/streak/${streak.id}/check-in` as any);
+              router.push({ pathname: '/streak/check-in', params: { id: streak.id } } as any);
             }}
           >
             <Text className="text-white text-xs font-semibold">Check In</Text>
@@ -67,7 +69,7 @@ export function StreakCard({ streak }: StreakCardProps) {
       <ProgressBar
         progress={progress}
         height={6}
-        color={checkedInToday ? COLORS.success : COLORS.accentOrange}
+        color={checkInStatus === 'verified' ? COLORS.success : checkInStatus === 'pending' ? COLORS.warning : COLORS.accentOrange}
         className="mb-3"
       />
 

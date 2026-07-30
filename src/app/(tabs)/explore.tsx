@@ -23,6 +23,7 @@ import { getRelativeTime } from '../../../utils/helpers';
 import type { LeaderboardEntry, Activity, User } from '../../../types';
 import { supabase } from '../../../lib/supabase';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { useActivityStore } from '../../../store/useActivityStore';
 
 type Tab = 'leaderboard' | 'feed' | 'discover';
 
@@ -69,7 +70,7 @@ export default function ExploreScreen() {
         if (data) setActivities(data);
 
         // Realtime Subscription
-        channel = supabase.channel('explore_feed')
+        channel = supabase.channel(`explore_feed_${Date.now()}`)
           .on(
             'postgres_changes',
             { event: 'INSERT', schema: 'public', table: 'activities' },
@@ -145,7 +146,7 @@ export default function ExploreScreen() {
 
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 100 }}>
         {activeTab === 'leaderboard' && <LeaderboardTab data={leaderboard} currentUser={currentUser} />}
-        {activeTab === 'feed' && <FeedTab activities={activities} />}
+        {activeTab === 'feed' && <FeedTab activities={activities} setActivities={setActivities} />}
         {activeTab === 'discover' && <DiscoverTab users={discoverUsers} />}
       </ScrollView>
     </View>
@@ -227,13 +228,74 @@ function LeaderboardRow({ entry, currentUser }: { entry: LeaderboardEntry, curre
 }
 
 // ---- Activity Feed ----
-function FeedTab({ activities }: { activities: any[] }) {
-  if (activities.length === 0) return <View className="px-5 py-10 items-center"><Text className="text-gray-500">No activity yet.</Text></View>;
+function FeedTab({ activities, setActivities }: { activities: any[], setActivities: (val: any) => void }) {
+  const { verifyCheckIn, invitations, acceptInvitation, declineInvitation, loadInvitations } = useActivityStore();
+  const currentUser = useAuthStore(s => s.user);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadInvitations();
+  }, []);
+
+  const handleVerify = async (id: string, approve: boolean) => {
+    setLoadingId(id);
+    try {
+      await verifyCheckIn(id, approve);
+      
+      // Optimistically update the UI so it reflects instantly without waiting for a re-fetch
+      setActivities(prev => prev.map(a => 
+        a.id === id 
+          ? { ...a, data: { ...a.data, completed: true, result: approve ? 'approved' : 'rejected' } }
+          : a
+      ));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingId(null);
+    }
+  };
 
   return (
     <View className="px-5">
+      {/* Invitations Section */}
+      {invitations.length > 0 && (
+        <View className="mb-6">
+          <SectionHeader title="Pending Invites" />
+          {invitations.map((inv) => (
+            <Card key={inv.id} className="mb-3 bg-amber-500/10 border-amber-500/30">
+              <View className="flex-row items-center justify-between mb-3">
+                <View className="flex-row items-center flex-1">
+                  <Avatar uri={inv.inviter?.avatar_url} name={inv.inviter?.display_name || 'User'} size="sm" className="mr-3" />
+                  <View className="flex-1">
+                    <Text className="text-white font-semibold">{inv.inviter?.display_name} invited you</Text>
+                    <Text className="text-gray-400 text-xs mt-0.5">to join "{inv.streak?.name}"</Text>
+                  </View>
+                </View>
+                <Text className="text-2xl">{inv.streak?.emoji}</Text>
+              </View>
+              <View className="flex-row gap-2">
+                <TouchableOpacity
+                  className="bg-[#252542] px-3 py-2 rounded-lg flex-1 items-center border border-gray-600"
+                  onPress={() => declineInvitation(inv.id)}
+                >
+                  <Text className="text-gray-300 font-medium">Decline</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="bg-orange-500 px-3 py-2 rounded-lg flex-1 items-center"
+                  onPress={() => acceptInvitation(inv.id)}
+                >
+                  <Text className="text-white font-medium">Accept</Text>
+                </TouchableOpacity>
+              </View>
+            </Card>
+          ))}
+        </View>
+      )}
+
       <SectionHeader title="Friends Activity" />
-      {activities.map((activity) => {
+      {activities.length === 0 ? (
+        <View className="py-10 items-center"><Text className="text-gray-500">No activity yet.</Text></View>
+      ) : activities.map((activity) => {
         const user = activity.user;
         if (!user) return null;
 
@@ -253,9 +315,11 @@ function FeedTab({ activities }: { activities: any[] }) {
                   </Text>
                   <Text className="text-gray-400 text-sm">
                     {activity.type === 'check_in' && 'checked in'}
+                    {activity.type === 'verification_request' && 'needs verification'}
                     {activity.type === 'missed' && 'missed a day'}
                     {activity.type === 'milestone' && 'hit a milestone'}
                     {activity.type === 'streak_created' && 'created a streak'}
+                    {activity.type === 'joined' && 'joined a streak'}
                   </Text>
                 </View>
 
@@ -279,6 +343,32 @@ function FeedTab({ activities }: { activities: any[] }) {
                   <Text className="text-red-400 text-sm mt-1">
                     😢 {(activity.data as any)?.message}
                   </Text>
+                )}
+                {activity.type === 'verification_request' && !activity.data?.completed && activity.user_id !== currentUser?.id && (
+                  <View className="flex-row gap-2 mt-3">
+                    <TouchableOpacity
+                      className="bg-[#252542] px-3 py-1.5 rounded-lg flex-1 items-center border border-gray-600"
+                      onPress={() => handleVerify(activity.id, false)}
+                      disabled={loadingId === activity.id}
+                    >
+                      <Text className="text-gray-300 font-medium">Reject</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className="bg-orange-500/20 px-3 py-1.5 rounded-lg flex-1 items-center border border-orange-500/50"
+                      onPress={() => handleVerify(activity.id, true)}
+                      disabled={loadingId === activity.id}
+                    >
+                      <Text className="text-orange-400 font-medium">Approve</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {activity.type === 'verification_request' && activity.data?.completed && (
+                  <Text className={`text-sm mt-2 font-medium ${activity.data.result === 'approved' ? 'text-green-400' : 'text-red-400'}`}>
+                    {activity.data.result === 'approved' ? '✓ Verified by group' : '❌ Rejected by group'}
+                  </Text>
+                )}
+                {activity.type === 'verification_request' && !activity.data?.completed && activity.user_id === currentUser?.id && (
+                  <Text className="text-amber-400 text-sm mt-2">⏳ Waiting for group verification</Text>
                 )}
 
                 <Text className="text-gray-500 text-xs mt-2">

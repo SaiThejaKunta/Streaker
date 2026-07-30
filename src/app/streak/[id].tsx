@@ -8,6 +8,7 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useStreakStore } from '../../../store/useStreakStore';
@@ -35,7 +36,7 @@ type Tab = 'calendar' | 'members' | 'leaderboard';
 export default function StreakDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { getStreakById, getCalendarDays, getStreakMembers, hasCheckedInToday } =
+  const { getStreakById, getCalendarDays, getStreakMembers, getTodayCheckInStatus, deleteStreak } =
     useStreakStore();
   const userId = useAuthStore((s) => s.user?.id) || '';
   const [activeTab, setActiveTab] = useState<Tab>('calendar');
@@ -53,7 +54,7 @@ export default function StreakDetailScreen() {
   const progress = getStreakProgress(streak.start_date, streak.target_days);
   const calendarDays = getCalendarDays(streak.id, userId);
   const members = getStreakMembers(streak.id);
-  const checkedInToday = hasCheckedInToday(streak.id, userId);
+  const checkInStatus = getTodayCheckInStatus(streak.id, userId);
 
   // Leaderboard sorted by coins earned
   const leaderboard = [...members]
@@ -152,23 +153,34 @@ export default function StreakDetailScreen() {
         </View>
 
         {/* Check-in Button */}
-        {!checkedInToday && streak.status === 'active' && (
+        {!checkInStatus && streak.status === 'active' && (
           <View className="px-5 mb-4">
             <Button
               title="Check In Now 🔥"
-              onPress={() => router.push(`/streak/check-in?id=${streak.id}` as any)}
+              onPress={() => router.push({ pathname: '/streak/check-in', params: { id: streak.id } } as any)}
               fullWidth
               size="lg"
             />
           </View>
         )}
-        {checkedInToday && (
+        {checkInStatus === 'verified' && (
           <View className="px-5 mb-4">
-            <Card className="bg-green-500/10 border-green-500/30 items-center">
-              <Text className="text-green-400 text-base font-semibold">
-                ✅ You've checked in today!
+            <View className="bg-green-500/10 border border-green-500/30 py-4 rounded-2xl items-center flex-row justify-center">
+              <Text className="text-xl mr-2">✅</Text>
+              <Text className="text-green-400 font-bold text-base">
+                Checked in for today!
               </Text>
-            </Card>
+            </View>
+          </View>
+        )}
+        {checkInStatus === 'pending' && (
+          <View className="px-5 mb-4">
+            <View className="bg-amber-500/10 border border-amber-500/30 py-4 rounded-2xl items-center flex-row justify-center">
+              <Text className="text-xl mr-2">⏳</Text>
+              <Text className="text-amber-400 font-bold text-base">
+                Pending Verification...
+              </Text>
+            </View>
           </View>
         )}
 
@@ -318,6 +330,40 @@ export default function StreakDetailScreen() {
                 </Card>
               );
             })}
+          </View>
+        )}
+
+        {/* Delete Streak Button (Creator Only) */}
+        {streak.created_by === userId && (
+          <View className="px-5 mt-4 mb-8">
+            <TouchableOpacity
+              className="bg-red-500/10 border border-red-500/30 rounded-xl py-3 items-center"
+              onPress={() => {
+                Alert.alert(
+                  'Delete Streak',
+                  streak.is_group
+                    ? 'Are you sure you want to permanently delete this group streak? All members will be refunded their coins.'
+                    : 'Are you sure you want to permanently delete this streak?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { 
+                      text: 'Delete', 
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await deleteStreak(streak.id);
+                          router.replace('/(tabs)/home');
+                        } catch (e: any) {
+                          Alert.alert('Error', e.message);
+                        }
+                      }
+                    }
+                  ]
+                );
+              }}
+            >
+              <Text className="text-red-400 font-bold">Delete Streak</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>

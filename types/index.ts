@@ -75,6 +75,7 @@ export interface CheckIn {
   streak_id: string;
   user_id: string;
   check_in_date: string;
+  status: 'pending' | 'verified' | 'rejected';
   proof_image_url: string | null;
   note: string | null;
   coins_earned: number;
@@ -126,6 +127,7 @@ export type ActivityType =
   | 'check_in'
   | 'streak_created'
   | 'streak_joined'
+  | 'verification_request'
   | 'milestone'
   | 'missed'
   | 'streak_completed'

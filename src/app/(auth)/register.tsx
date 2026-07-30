@@ -43,6 +43,11 @@ export default function RegisterScreen() {
       username: form.username.trim().toLowerCase(),
       display_name: form.display_name.trim(),
     });
+    // After successful registration, navigate to home
+    const { isAuthenticated } = useAuthStore.getState();
+    if (isAuthenticated) {
+      router.replace('/(tabs)/home');
+    }
   };
 
   const updateField = (key: string, value: string) => {

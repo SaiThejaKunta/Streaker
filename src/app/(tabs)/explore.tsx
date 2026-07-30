@@ -18,16 +18,90 @@ import {
   SectionHeader,
   Divider,
 } from '../../../components/ui';
-import { MOCK_LEADERBOARD, MOCK_ACTIVITIES, MOCK_USERS } from '../../../utils/mockData';
 import { STREAK_CATEGORIES, REACTION_EMOJIS } from '../../../utils/constants';
 import { getRelativeTime } from '../../../utils/helpers';
-import type { LeaderboardEntry, Activity } from '../../../types';
+import type { LeaderboardEntry, Activity, User } from '../../../types';
+import { supabase } from '../../../lib/supabase';
+import { useAuthStore } from '../../../store/useAuthStore';
 
 type Tab = 'leaderboard' | 'feed' | 'discover';
 
 export default function ExploreScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('leaderboard');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
+  const [discoverUsers, setDiscoverUsers] = useState<User[]>([]);
+  const currentUser = useAuthStore((s) => s.user);
+
+  useEffect(() => {
+    fetchData();
+  }, [activeTab]);
+
+  const fetchData = async () => {
+    let channel: any;
+
+    try {
+      if (activeTab === 'leaderboard') {
+        const { data } = await supabase
+          .from('profiles')
+          .select('*')
+          .order('coin_balance', { ascending: false })
+          .limit(50);
+        
+        if (data) {
+          const lb = data.map((u, i) => ({
+            rank: i + 1,
+            user: u as User,
+            streak_count: 0, // Would need aggregate query for real counts
+            completion_rate: 100,
+            coins_earned: u.coin_balance
+          }));
+          setLeaderboard(lb);
+        }
+      } else if (activeTab === 'feed') {
+        const { data } = await supabase
+          .from('activities')
+          .select('*, user:profiles(*)')
+          .order('created_at', { ascending: false })
+          .limit(50);
+        if (data) setActivities(data);
+
+        // Realtime Subscription
+        channel = supabase.channel('public:activities')
+          .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'activities' },
+            async (payload) => {
+              // Fetch user details for the new activity
+              const { data: userData } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', payload.new.user_id)
+                .single();
+              
+              const newActivity = { ...payload.new, user: userData };
+              setActivities((prev) => [newActivity, ...prev]);
+            }
+          )
+          .subscribe();
+      } else if (activeTab === 'discover') {
+        const { data } = await supabase
+          .from('profiles')
+          .select('*')
+          .neq('id', currentUser?.id || '')
+          .limit(20);
+        if (data) setDiscoverUsers(data as User[]);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
+  };
 
   return (
     <View className="flex-1 bg-[#0F0F1A]">
@@ -70,23 +144,25 @@ export default function ExploreScreen() {
       </View>
 
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 100 }}>
-        {activeTab === 'leaderboard' && <LeaderboardTab />}
-        {activeTab === 'feed' && <FeedTab />}
-        {activeTab === 'discover' && <DiscoverTab />}
+        {activeTab === 'leaderboard' && <LeaderboardTab data={leaderboard} currentUser={currentUser} />}
+        {activeTab === 'feed' && <FeedTab activities={activities} />}
+        {activeTab === 'discover' && <DiscoverTab users={discoverUsers} />}
       </ScrollView>
     </View>
   );
 }
 
 // ---- Leaderboard ----
-function LeaderboardTab() {
+function LeaderboardTab({ data, currentUser }: { data: LeaderboardEntry[], currentUser: User | null }) {
+  if (data.length === 0) return <View className="px-5 py-10 items-center"><Text className="text-gray-500">Loading...</Text></View>;
+  
   return (
     <View className="px-5">
       <SectionHeader title="Global Leaderboard" />
 
       {/* Top 3 Podium */}
       <View className="flex-row items-end justify-center mb-6 gap-3">
-        {[MOCK_LEADERBOARD[1], MOCK_LEADERBOARD[0], MOCK_LEADERBOARD[2]].map(
+        {[data[1], data[0], data[2]].filter(Boolean).map(
           (entry, i) => {
             const isFirst = i === 1;
             const medals = ['🥈', '🥇', '🥉'];
@@ -112,15 +188,15 @@ function LeaderboardTab() {
       </View>
 
       {/* Full List */}
-      {MOCK_LEADERBOARD.map((entry) => (
-        <LeaderboardRow key={entry.rank} entry={entry} />
+      {data.map((entry) => (
+        <LeaderboardRow key={entry.rank} entry={entry} currentUser={currentUser} />
       ))}
     </View>
   );
 }
 
-function LeaderboardRow({ entry }: { entry: LeaderboardEntry }) {
-  const isCurrentUser = entry.user.id === 'user-001';
+function LeaderboardRow({ entry, currentUser }: { entry: LeaderboardEntry, currentUser: User | null }) {
+  const isCurrentUser = entry.user.id === currentUser?.id;
   return (
     <Card className={`mb-2 ${isCurrentUser ? 'border-orange-500/50' : ''}`}>
       <View className="flex-row items-center">
@@ -151,14 +227,14 @@ function LeaderboardRow({ entry }: { entry: LeaderboardEntry }) {
 }
 
 // ---- Activity Feed ----
-function FeedTab() {
-  const allUsers = [...MOCK_USERS, { id: 'user-001', display_name: 'Alex Champion', avatar_url: null, username: 'streaker_king', bio: '', coin_balance: 1000, is_public: true, created_at: '', updated_at: '' }];
+function FeedTab({ activities }: { activities: any[] }) {
+  if (activities.length === 0) return <View className="px-5 py-10 items-center"><Text className="text-gray-500">No activity yet.</Text></View>;
 
   return (
     <View className="px-5">
       <SectionHeader title="Friends Activity" />
-      {MOCK_ACTIVITIES.map((activity) => {
-        const user = allUsers.find((u) => u.id === activity.user_id);
+      {activities.map((activity) => {
+        const user = activity.user;
         if (!user) return null;
 
         return (
@@ -230,7 +306,7 @@ function FeedTab() {
 }
 
 // ---- Discover ----
-function DiscoverTab() {
+function DiscoverTab({ users }: { users: User[] }) {
   return (
     <View className="px-5">
       <SectionHeader title="Trending Streak Categories" />
@@ -249,7 +325,7 @@ function DiscoverTab() {
       <Divider className="my-6" />
 
       <SectionHeader title="People You May Know" />
-      {MOCK_USERS.filter((u) => u.is_public).map((user) => (
+      {users.map((user) => (
         <Card key={user.id} className="mb-2">
           <View className="flex-row items-center">
             <Avatar

@@ -1,18 +1,11 @@
 // ============================================================
-// STREAKER — Streak Store (Zustand)
+// STREAKER — Streak Store (Zustand + Supabase)
 // ============================================================
 
 import { create } from 'zustand';
-import type {
-  Streak, StreakMember, CheckIn, CreateStreakForm, CalendarDay,
-} from '../types';
-import {
-  MOCK_STREAKS, MOCK_STREAK_MEMBERS, MOCK_CHECK_INS,
-  MOCK_CURRENT_USER, MOCK_USERS,
-} from '../utils/mockData';
-import {
-  generateId, getToday, addDays, buildCalendarDays,
-} from '../utils/helpers';
+import { supabase } from '../lib/supabase';
+import type { Streak, StreakMember, CheckIn, CreateStreakForm, CalendarDay } from '../types';
+import { getToday, buildCalendarDays } from '../utils/helpers';
 import { calculateBuyIn, calculateDailyReward } from '../utils/constants';
 import { useAuthStore } from './useAuthStore';
 
@@ -45,17 +38,81 @@ export const useStreakStore = create<StreakState>((set, get) => ({
   error: null,
 
   loadStreaks: async () => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
-      // TODO: Replace with Supabase query
-      await new Promise((r) => setTimeout(r, 500));
+      const { user } = useAuthStore.getState();
+      if (!user) {
+        set({ streaks: [], streakMembers: [], checkIns: [], isLoading: false });
+        return;
+      }
+
+      // 1. Fetch memberships for current user
+      const { data: myMemberships, error: memErr } = await supabase
+        .from('streak_members')
+        .select('*')
+        .eq('user_id', user.id);
+      
+      if (memErr) throw memErr;
+
+      // 2. Fetch the actual streaks they belong to
+      const streakIds = myMemberships?.map((m: any) => m.streak_id) || [];
+      let streaksData: any[] = [];
+      let allMembersData: any[] = [];
+      let checkInsData: any[] = [];
+
+      if (streakIds.length > 0) {
+        // Streaks
+        const { data: sData, error: sErr } = await supabase
+          .from('streaks')
+          .select('*')
+          .in('id', streakIds);
+        if (sErr) throw sErr;
+        streaksData = sData || [];
+
+        // All members for those streaks (to show leaderboards/friends)
+        const { data: mData, error: mErr } = await supabase
+          .from('streak_members')
+          .select('*, user:profiles(*)')
+          .in('streak_id', streakIds);
+        if (mErr) throw mErr;
+        allMembersData = mData || [];
+
+        // Check-ins for those streaks (last 30 days)
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
+        const { data: cData, error: cErr } = await supabase
+          .from('check_ins')
+          .select('*')
+          .in('streak_id', streakIds)
+          .gte('created_at', thirtyDaysAgo.toISOString());
+        if (cErr) throw cErr;
+        
+        // Map created_at to check_in_date for local compat
+        checkInsData = (cData || []).map((c: any) => ({
+          ...c,
+          check_in_date: c.created_at.split('T')[0]
+        }));
+      }
+
       set({
-        streaks: MOCK_STREAKS,
-        streakMembers: MOCK_STREAK_MEMBERS,
-        checkIns: MOCK_CHECK_INS,
+        streaks: streaksData,
+        streakMembers: allMembersData.map((m: any) => ({
+          id: m.id,
+          streak_id: m.streak_id,
+          user_id: m.user_id,
+          coins_invested: 0,
+          coins_earned: 0,
+          current_streak_count: m.current_count,
+          is_active: m.status === 'active',
+          joined_at: m.joined_at,
+          user: m.user
+        })),
+        checkIns: checkInsData,
         isLoading: false,
       });
     } catch (err: any) {
+      console.error('loadStreaks error', err);
       set({ error: err.message, isLoading: false });
     }
   },
@@ -82,26 +139,18 @@ export const useStreakStore = create<StreakState>((set, get) => ({
     const { streaks, streakMembers } = get();
     const streak = streaks.find((s) => s.id === id);
     if (!streak) return undefined;
-    const allUsers = [MOCK_CURRENT_USER, ...MOCK_USERS];
     return {
       ...streak,
-      members: streakMembers
-        .filter((sm) => sm.streak_id === id)
-        .map((sm) => ({
-          ...sm,
-          user: allUsers.find((u) => u.id === sm.user_id),
-        })),
+      members: streakMembers.filter((sm) => sm.streak_id === id),
     };
   },
 
   getStreakMembers: (streakId: string) => {
     const { streakMembers } = get();
-    const allUsers = [MOCK_CURRENT_USER, ...MOCK_USERS];
     return streakMembers
       .filter((sm) => sm.streak_id === streakId)
       .map((sm) => ({
         ...sm,
-        user: allUsers.find((u) => u.id === sm.user_id),
         today_checked_in: get().hasCheckedInToday(streakId, sm.user_id),
       }));
   },
@@ -120,7 +169,7 @@ export const useStreakStore = create<StreakState>((set, get) => ({
     const streak = get().streaks.find((s) => s.id === streakId);
     if (!streak) return [];
     const userCheckIns = get().getUserCheckIns(streakId, userId);
-    return buildCalendarDays(streak.start_date, streak.target_days, userCheckIns);
+    return buildCalendarDays(streak.created_at || getToday(), streak.target_days, userCheckIns);
   },
 
   hasCheckedInToday: (streakId: string, userId: string) => {
@@ -134,44 +183,73 @@ export const useStreakStore = create<StreakState>((set, get) => ({
   },
 
   createStreak: async (form: CreateStreakForm) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
-      await new Promise((r) => setTimeout(r, 600));
-      const userId = useAuthStore.getState().user?.id || 'user-001';
+      const user = useAuthStore.getState().user;
+      if (!user) throw new Error('Not authenticated');
+
       const buyIn = form.is_group ? calculateBuyIn(form.target_days) : 0;
+      if (user.coin_balance < buyIn) {
+        throw new Error('Not enough coins for buy-in');
+      }
 
-      const newStreak: Streak = {
-        id: `streak-${generateId()}`,
-        creator_id: userId,
-        name: form.name,
-        emoji: form.emoji,
-        description: form.description || null,
-        target_days: form.target_days,
-        coin_buy_in: buyIn,
-        is_group: form.is_group,
-        is_public: form.is_public,
-        reminder_time: form.reminder_time,
-        status: 'active',
-        start_date: getToday(),
-        end_date: null,
-        created_at: new Date().toISOString(),
-      };
+      // 1. Create Streak
+      const { data: streakData, error: streakErr } = await supabase
+        .from('streaks')
+        .insert({
+          name: form.name,
+          description: form.description,
+          emoji: form.emoji,
+          category: 'custom',
+          target_days: form.target_days,
+          is_group: form.is_group,
+          buy_in: buyIn,
+          created_by: user.id
+        })
+        .select()
+        .single();
+      
+      if (streakErr) throw streakErr;
 
+      // 2. Add Member
+      const { data: memberData, error: memErr } = await supabase
+        .from('streak_members')
+        .insert({
+          streak_id: streakData.id,
+          user_id: user.id,
+          role: 'creator',
+          current_count: 0,
+        })
+        .select('*, user:profiles(*)')
+        .single();
+
+      if (memErr) throw memErr;
+
+      // 3. Activity feed
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        streak_id: streakData.id,
+        type: 'joined',
+      });
+
+      // Deduct coins if group buy-in
+      if (buyIn > 0) {
+        await useAuthStore.getState().updateCoinBalance(-buyIn);
+      }
+
+      // Format for local state
+      const newStreak = streakData as Streak;
       const newMember: StreakMember = {
-        id: `sm-${generateId()}`,
-        streak_id: newStreak.id,
-        user_id: userId,
+        id: memberData.id,
+        streak_id: memberData.streak_id,
+        user_id: memberData.user_id,
         coins_invested: buyIn,
         coins_earned: 0,
         current_streak_count: 0,
         is_active: true,
-        joined_at: new Date().toISOString(),
+        joined_at: memberData.joined_at,
+        user: memberData.user
       };
-
-      // Deduct coins
-      if (buyIn > 0) {
-        useAuthStore.getState().updateCoinBalance(-buyIn);
-      }
 
       set((state) => ({
         streaks: [newStreak, ...state.streaks],
@@ -187,34 +265,62 @@ export const useStreakStore = create<StreakState>((set, get) => ({
   },
 
   checkIn: async (streakId: string, proofImageUrl?: string, note?: string) => {
+    set({ error: null });
     try {
-      await new Promise((r) => setTimeout(r, 400));
-      const userId = useAuthStore.getState().user?.id || 'user-001';
+      const user = useAuthStore.getState().user;
+      if (!user) throw new Error('Not authenticated');
+
       const streak = get().streaks.find((s) => s.id === streakId);
       const member = get().streakMembers.find(
-        (sm) => sm.streak_id === streakId && sm.user_id === userId
+        (sm) => sm.streak_id === streakId && sm.user_id === user.id
       );
 
       if (!streak || !member) throw new Error('Streak not found');
-      if (get().hasCheckedInToday(streakId, userId)) {
+      if (get().hasCheckedInToday(streakId, user.id)) {
         throw new Error('Already checked in today');
       }
 
       const newStreakCount = member.current_streak_count + 1;
       const coinsEarned = calculateDailyReward(newStreakCount, streak.is_group);
 
-      const newCheckIn: CheckIn = {
-        id: `ci-${generateId()}`,
-        streak_id: streakId,
-        user_id: userId,
-        check_in_date: getToday(),
-        proof_image_url: proofImageUrl || null,
-        note: note || null,
-        coins_earned: coinsEarned,
-        created_at: new Date().toISOString(),
-      };
+      // 1. Insert Check-in
+      const { data: checkInData, error: checkInErr } = await supabase
+        .from('check_ins')
+        .insert({
+          streak_id: streakId,
+          user_id: user.id,
+          note: note
+        })
+        .select()
+        .single();
+      
+      if (checkInErr) throw checkInErr;
 
-      // Update member's streak count and coins
+      // 2. Update Streak Member
+      const { error: upMemErr } = await supabase
+        .from('streak_members')
+        .update({
+          current_count: newStreakCount,
+          longest_count: Math.max(member.longest_count || 0, newStreakCount)
+        })
+        .eq('id', member.id);
+      
+      if (upMemErr) throw upMemErr;
+
+      // 3. Activity feed
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        streak_id: streakId,
+        type: 'check_in',
+        data: { note, coins: coinsEarned }
+      });
+
+      const newCheckIn: CheckIn = {
+        ...checkInData,
+        check_in_date: checkInData.created_at.split('T')[0],
+      } as CheckIn;
+
+      // Update local state
       set((state) => ({
         checkIns: [newCheckIn, ...state.checkIns],
         streakMembers: state.streakMembers.map((sm) =>
@@ -223,13 +329,14 @@ export const useStreakStore = create<StreakState>((set, get) => ({
                 ...sm,
                 current_streak_count: newStreakCount,
                 coins_earned: sm.coins_earned + coinsEarned,
+                longest_count: Math.max(sm.longest_count || 0, newStreakCount)
               }
             : sm
         ),
       }));
 
       // Update user coin balance
-      useAuthStore.getState().updateCoinBalance(coinsEarned);
+      await useAuthStore.getState().updateCoinBalance(coinsEarned);
 
       return newCheckIn;
     } catch (err: any) {

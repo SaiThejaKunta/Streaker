@@ -17,7 +17,11 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) return;
     await login({ email: email.trim(), password });
-    // Auth store auto-sets isAuthenticated → root layout switches to tabs
+    // Navigate to home after successful login
+    const { isAuthenticated } = useAuthStore.getState();
+    if (isAuthenticated) {
+      router.replace('/(tabs)/home');
+    }
   };
 
   return (

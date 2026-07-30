@@ -22,18 +22,37 @@ import {
 } from '../../../components/ui';
 import { StreakCard } from '../../../components/ui/StreakCard';
 import { getTodaysQuote, formatNumber } from '../../../utils/helpers';
-import { MOCK_USER_STATS } from '../../../utils/mockData';
 
 export default function HomeScreen() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
-  const { loadStreaks, getMyStreaks, isLoading } = useStreakStore();
+  const { loadStreaks, getMyStreaks, isLoading, checkIns } = useStreakStore();
 
   const myStreaks = getMyStreaks();
   const groupStreaks = myStreaks.filter((s) => s.is_group);
   const soloStreaks = myStreaks.filter((s) => !s.is_group);
   const quote = useMemo(() => getTodaysQuote(), []);
-  const stats = MOCK_USER_STATS;
+  
+  const stats = useMemo(() => {
+    let longest_streak = 0;
+    let total_coins_earned = 0;
+    
+    myStreaks.forEach((s: any) => {
+      const myMem = s.my_membership;
+      if (myMem) {
+        if (myMem.longest_count > longest_streak) longest_streak = myMem.longest_count;
+        total_coins_earned += myMem.coins_earned;
+      }
+    });
+
+    return {
+      active_streaks: myStreaks.length,
+      total_check_ins: checkIns.filter(c => c.user_id === user?.id).length,
+      total_coins_earned,
+      longest_streak,
+      achievements_unlocked: 0,
+    };
+  }, [myStreaks, checkIns, user?.id]);
 
   const handleRefresh = () => {
     loadStreaks();

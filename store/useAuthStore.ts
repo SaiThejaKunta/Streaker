@@ -3,12 +3,9 @@
 // ============================================================
 
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../lib/supabase';
 import type { User, RegisterForm, LoginForm } from '../types';
-import { MOCK_CURRENT_USER } from '../utils/mockData';
 import { COINS } from '../utils/constants';
-
-const AUTH_STORAGE_KEY = 'streaker_auth';
 
 interface AuthState {
   user: User | null;
@@ -28,34 +25,32 @@ interface AuthState {
   hydrate: () => Promise<void>;
 }
 
-async function persistAuth(user: User | null) {
-  try {
-    if (user) {
-      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-    } else {
-      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
-    }
-  } catch (e) {
-    // Storage error — ignore
-  }
-}
-
-export const useAuthStore = create<AuthState>((set, get) => ({
-  user: null,
-  isAuthenticated: false,
-  isLoading: false,
-  isHydrated: false,
-  error: null,
-
   hydrate: async () => {
     try {
-      const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
-      if (stored) {
-        const user = JSON.parse(stored) as User;
-        set({ user, isAuthenticated: true, isHydrated: true });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        // Fetch user profile from DB
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (profile) {
+          set({ user: profile as User, isAuthenticated: true, isHydrated: true });
+        } else {
+          set({ isHydrated: true });
+        }
       } else {
         set({ isHydrated: true });
       }
+
+      // Setup auth state listener
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_OUT') {
+          set({ user: null, isAuthenticated: false });
+        }
+      });
     } catch (e) {
       set({ isHydrated: true });
     }
@@ -64,14 +59,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (form: LoginForm) => {
     set({ isLoading: true, error: null });
     try {
-      // TODO: Replace with Supabase auth
-      await new Promise((r) => setTimeout(r, 800));
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: form.email,
+        password: form.password,
+      });
 
-      // Mock: accept any email/password
-      const user = MOCK_CURRENT_USER;
-      await persistAuth(user);
+      if (error) throw error;
+      if (!data.user) throw new Error('No user returned');
+
+      // Fetch profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.user.id)
+        .single();
+
+      if (profileError) throw profileError;
+
       set({
-        user,
+        user: profile as User,
         isAuthenticated: true,
         isLoading: false,
       });
@@ -83,24 +89,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   register: async (form: RegisterForm) => {
     set({ isLoading: true, error: null });
     try {
-      // TODO: Replace with Supabase auth
-      await new Promise((r) => setTimeout(r, 1000));
+      const { data, error } = await supabase.auth.signUp({
+        email: form.email,
+        password: form.password,
+        options: {
+          data: {
+            username: form.username,
+            display_name: form.display_name,
+          },
+        },
+      });
 
-      const newUser: User = {
-        id: 'user-new-' + Date.now(),
-        username: form.username,
-        display_name: form.display_name,
-        avatar_url: null,
-        bio: null,
-        coin_balance: COINS.SIGNUP_BONUS,
-        is_public: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+      if (error) throw error;
+      if (!data.user) throw new Error('Registration failed');
 
-      await persistAuth(newUser);
+      // Profile is auto-created via trigger, but we need to fetch it
+      // Add a slight delay to ensure trigger finishes
+      await new Promise(r => setTimeout(r, 1000));
+      
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.user.id)
+        .single();
+
+      if (profileError) throw profileError;
+
       set({
-        user: newUser,
+        user: profile as User,
         isAuthenticated: true,
         isLoading: false,
       });
@@ -109,31 +125,51 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  logout: () => {
-    persistAuth(null);
-    set({ user: null, isAuthenticated: false, error: null });
+  logout: async () => {
+    set({ isLoading: true });
+    await supabase.auth.signOut();
+    set({ user: null, isAuthenticated: false, error: null, isLoading: false });
   },
 
-  updateProfile: (updates: Partial<User>) => {
+  updateProfile: async (updates: Partial<User>) => {
     const { user } = get();
     if (!user) return;
-    const updated = { ...user, ...updates, updated_at: new Date().toISOString() };
-    persistAuth(updated);
-    set({ user: updated });
+    
+    // Optimistic update locally
+    const updated = { ...user, ...updates };
+    set({ user: updated as User });
+
+    // Update in Supabase
+    try {
+      await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id);
+    } catch (e) {
+      console.error('Failed to update profile', e);
+    }
   },
 
-  updateCoinBalance: (delta: number) => {
+  updateCoinBalance: async (delta: number) => {
     const { user } = get();
     if (!user) return;
-    const updated = { ...user, coin_balance: user.coin_balance + delta };
-    persistAuth(updated);
-    set({ user: updated });
+    
+    const newBalance = user.coin_balance + delta;
+    set({ user: { ...user, coin_balance: newBalance } as User });
+
+    try {
+      await supabase
+        .from('profiles')
+        .update({ coin_balance: newBalance })
+        .eq('id', user.id);
+    } catch (e) {
+      console.error('Failed to update coin balance', e);
+    }
   },
 
   clearError: () => set({ error: null }),
 
   setUser: (user: User) => {
-    persistAuth(user);
     set({ user, isAuthenticated: true });
   },
 }));

@@ -61,6 +61,7 @@ export interface StreakMember {
   coins_invested: number;
   coins_earned: number;
   current_streak_count: number;
+  longest_count: number;
   is_active: boolean;
   joined_at: string;
   // Joined fields

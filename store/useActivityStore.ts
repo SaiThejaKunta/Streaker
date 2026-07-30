@@ -61,7 +61,7 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       const streak = invitation.streak;
       if (!streak) throw new Error('Streak not found');
 
-      const buyIn = streak.buy_in || 0;
+      const buyIn = streak.coin_buy_in || 0;
       if (user.coin_balance < buyIn) {
         throw new Error('Not enough coins for buy-in');
       }

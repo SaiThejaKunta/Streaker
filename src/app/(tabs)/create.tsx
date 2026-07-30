@@ -23,7 +23,7 @@ import {
   APP_CONFIG,
 } from '../../../utils/constants';
 import { supabase } from '../../../lib/supabase';
-import type { User } from '../../../types';
+import type { User, CreateStreakForm } from '../../../types';
 
 export default function CreateStreakScreen() {
   const router = useRouter();

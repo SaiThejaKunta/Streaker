@@ -108,6 +108,7 @@ export const useStreakStore = create<StreakState>((set, get) => ({
           coins_invested: 0,
           coins_earned: 0,
           current_streak_count: m.current_count,
+          longest_count: m.longest_count || 0,
           is_active: m.status === 'active',
           joined_at: m.joined_at,
           user: m.user
@@ -272,6 +273,7 @@ export const useStreakStore = create<StreakState>((set, get) => ({
         coins_invested: buyIn,
         coins_earned: 0,
         current_streak_count: 0,
+        longest_count: 0,
         is_active: true,
         joined_at: memberData.joined_at,
         user: memberData.user

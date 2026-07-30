@@ -69,7 +69,7 @@ export default function ExploreScreen() {
         if (data) setActivities(data);
 
         // Realtime Subscription
-        channel = supabase.channel('public:activities')
+        channel = supabase.channel('explore_feed')
           .on(
             'postgres_changes',
             { event: 'INSERT', schema: 'public', table: 'activities' },

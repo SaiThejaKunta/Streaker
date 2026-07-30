@@ -236,6 +236,24 @@ export const useStreakStore = create<StreakState>((set, get) => ({
         type: 'joined',
       });
 
+      // 4. Create Invitations
+      if (form.is_group && form.invitee_ids && form.invitee_ids.length > 0) {
+        const invites = form.invitee_ids.map(inviteeId => ({
+          streak_id: streakData.id,
+          inviter_id: user.id,
+          invitee_id: inviteeId,
+          status: 'pending'
+        }));
+        
+        const { error: inviteErr } = await supabase
+          .from('invitations')
+          .insert(invites);
+          
+        if (inviteErr) {
+          console.error("Error sending invitations:", inviteErr);
+        }
+      }
+
       // Deduct coins if group buy-in
       if (buyIn > 0) {
         await useAuthStore.getState().updateCoinBalance(-buyIn);

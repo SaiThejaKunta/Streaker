@@ -17,7 +17,6 @@ import {
   Divider,
   Button,
 } from '../../../components/ui';
-import { MOCK_USER_STATS, MOCK_TRANSACTIONS } from '../../../utils/mockData';
 import { ACHIEVEMENTS, COLORS } from '../../../utils/constants';
 import { formatDateDisplay, formatCoins, getRelativeTime, formatNumber } from '../../../utils/helpers';
 
@@ -26,8 +25,27 @@ export default function ProfileScreen() {
   const user = useAuthStore((s) => s.user);
   const { getMyStreaks } = useStreakStore();
   const [viewMode, setViewMode] = useState<'public' | 'private'>('public');
-  const stats = MOCK_USER_STATS;
   const myStreaks = getMyStreaks();
+  
+  const stats = React.useMemo(() => {
+    let longest_streak = 0;
+    let completed_streaks = 0;
+    
+    myStreaks.forEach((s: any) => {
+      if (s.my_membership?.longest_count > longest_streak) {
+        longest_streak = s.my_membership.longest_count;
+      }
+      if (s.status === 'completed') completed_streaks++;
+    });
+
+    return {
+      active_streaks: myStreaks.filter((s: any) => s.status === 'active').length,
+      completed_streaks,
+      longest_streak,
+      total_check_ins: 0, // Would need checkIns from store
+      achievements_unlocked: 0,
+    };
+  }, [myStreaks]);
   const unlockedBadges = ACHIEVEMENTS.slice(0, stats.achievements_unlocked);
 
   return (
@@ -186,27 +204,8 @@ export default function ProfileScreen() {
         {viewMode === 'private' && (
           <View className="px-5 mt-5">
             <SectionHeader title="🪙 Coin History" />
-            {MOCK_TRANSACTIONS.slice(0, 6).map((tx) => (
-              <View
-                key={tx.id}
-                className="flex-row items-center py-3 border-b border-[#2A2A45]"
-              >
-                <View className="w-9 h-9 rounded-full bg-[#1A1A2E] items-center justify-center mr-3 border border-[#2A2A45]">
-                  <Text className="text-sm">
-                    {tx.amount > 0 ? '📈' : '📉'}
-                  </Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="text-white text-sm" numberOfLines={1}>
-                    {tx.description}
-                  </Text>
-                  <Text className="text-gray-500 text-xs mt-0.5">
-                    {getRelativeTime(tx.created_at)}
-                  </Text>
-                </View>
-                <CoinDisplay amount={tx.amount} showSign size="sm" />
-              </View>
-            ))}
+            {/* Transactions removed until real backend tracking is added */}
+            <View className="items-center py-4"><Text className="text-gray-500">No recent transactions</Text></View>
           </View>
         )}
 

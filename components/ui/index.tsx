@@ -348,7 +348,7 @@ export function CoinDisplay({ amount, showSign = false, size = 'md', className =
       <Text
         className={`font-bold ${sizeClasses[size]} ${showSign ? (isPositive ? 'text-green-400' : 'text-red-400') : 'text-amber-400'}`}
       >
-        {sign}{amount.toLocaleString()}
+        {sign}{(amount || 0).toLocaleString()}
       </Text>
     </View>
   );

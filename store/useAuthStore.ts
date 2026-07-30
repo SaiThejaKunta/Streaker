@@ -25,6 +25,13 @@ interface AuthState {
   hydrate: () => Promise<void>;
 }
 
+export const useAuthStore = create<AuthState>((set, get) => ({
+  user: null,
+  isAuthenticated: false,
+  isLoading: false,
+  isHydrated: false,
+  error: null,
+
   hydrate: async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();

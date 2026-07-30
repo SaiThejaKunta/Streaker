@@ -22,14 +22,15 @@ import {
   calculateBuyIn,
   APP_CONFIG,
 } from '../../../utils/constants';
-import type { CreateStreakForm } from '../../../types';
-import { MOCK_USERS } from '../../../utils/mockData';
+import { supabase } from '../../../lib/supabase';
+import type { User } from '../../../types';
 
 export default function CreateStreakScreen() {
   const router = useRouter();
   const { createStreak, isLoading } = useStreakStore();
   const user = useAuthStore((s) => s.user);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [availableFriends, setAvailableFriends] = useState<User[]>([]);
   const [form, setForm] = useState<CreateStreakForm>({
     name: '',
     emoji: '🔥',
@@ -43,6 +44,16 @@ export default function CreateStreakScreen() {
 
   const buyIn = form.is_group ? calculateBuyIn(form.target_days) : 0;
   const canAfford = (user?.coin_balance || 0) >= buyIn;
+
+  React.useEffect(() => {
+    async function loadFriends() {
+      if (form.is_group && availableFriends.length === 0) {
+        const { data } = await supabase.from('profiles').select('*').neq('id', user?.id || '').limit(20);
+        if (data) setAvailableFriends(data as User[]);
+      }
+    }
+    loadFriends();
+  }, [form.is_group]);
 
   const handleCreate = async () => {
     if (!form.name.trim()) {
@@ -213,7 +224,7 @@ export default function CreateStreakScreen() {
               <Text className="text-white font-semibold mb-3">
                 Invite Friends ({form.invitee_ids.length} selected)
               </Text>
-              {MOCK_USERS.map((friend) => {
+              {availableFriends.map((friend) => {
                 const isSelected = form.invitee_ids.includes(friend.id);
                 return (
                   <TouchableOpacity

@@ -15,7 +15,6 @@ import {
   Divider,
 } from '../../../components/ui';
 import { useActivityStore } from '../../../store/useActivityStore';
-import { MOCK_ACTIVITIES, MOCK_INVITATIONS, MOCK_USERS, MOCK_STREAKS, MOCK_CURRENT_USER } from '../../../utils/mockData';
 import { getRelativeTime } from '../../../utils/helpers';
 
 type Tab = 'all' | 'invites';
@@ -30,7 +29,6 @@ export default function ActivityScreen() {
     loadInvitations();
   }, []);
 
-  const allUsers = [MOCK_CURRENT_USER, ...MOCK_USERS];
   const pendingInvites = invitations.filter((inv) => inv.status === 'pending');
 
   return (
@@ -82,8 +80,8 @@ export default function ActivityScreen() {
               <EmptyState emoji="📭" title="No Activity Yet" description="When your friends check in or you earn achievements, they'll show up here." />
             ) : (
               activities.map((act) => {
-                const user = allUsers.find((u) => u.id === act.user_id);
-                const streak = MOCK_STREAKS.find((s) => s.id === act.streak_id);
+                const user = (act as any).user;
+                const streak = (act as any).streak;
                 if (!user) return null;
 
                 const getActivityIcon = () => {
@@ -141,8 +139,8 @@ export default function ActivityScreen() {
               <EmptyState emoji="✉️" title="No Pending Invites" description="When someone invites you to a streak, it'll appear here." />
             ) : (
               pendingInvites.map((inv) => {
-                const inviter = allUsers.find((u) => u.id === inv.inviter_id);
-                const streak = MOCK_STREAKS.find((s) => s.id === inv.streak_id);
+                const inviter = (inv as any).inviter;
+                const streak = (inv as any).streak;
                 return (
                   <Card key={inv.id} className="mb-3">
                     <View className="flex-row items-center mb-3">

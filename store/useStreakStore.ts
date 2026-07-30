@@ -67,7 +67,11 @@ export const useStreakStore = create<StreakState>((set, get) => ({
           .select('*')
           .in('id', streakIds);
         if (sErr) throw sErr;
-        streaksData = sData || [];
+        streaksData = (sData || []).map((s: any) => ({
+          ...s,
+          start_date: s.created_at.split('T')[0],
+          coin_buy_in: s.buy_in || 0
+        }));
 
         // All members for those streaks (to show leaderboards/friends)
         const { data: mData, error: mErr } = await supabase
@@ -238,7 +242,11 @@ export const useStreakStore = create<StreakState>((set, get) => ({
       }
 
       // Format for local state
-      const newStreak = streakData as Streak;
+      const newStreak = {
+        ...streakData,
+        start_date: streakData.created_at.split('T')[0],
+        coin_buy_in: streakData.buy_in || 0
+      } as Streak;
       const newMember: StreakMember = {
         id: memberData.id,
         streak_id: memberData.streak_id,

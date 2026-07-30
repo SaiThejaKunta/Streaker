@@ -5,13 +5,22 @@
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { MOCK_USERS } from '../../../utils/mockData';
+import { supabase } from '../../../lib/supabase';
+import type { User } from '../../../types';
 import { Card, Avatar, Badge, CoinDisplay, Button } from '../../../components/ui';
 
 export default function UserProfileScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const router = useRouter();
-  const user = MOCK_USERS.find((u) => u.id === userId);
+  const [user, setUser] = React.useState<User | null>(null);
+
+  React.useEffect(() => {
+    async function loadUser() {
+      const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+      if (data) setUser(data as User);
+    }
+    if (userId) loadUser();
+  }, [userId]);
 
   if (!user) {
     return (

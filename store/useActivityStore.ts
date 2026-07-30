@@ -4,7 +4,6 @@
 
 import { create } from 'zustand';
 import type { Activity, Invitation } from '../types';
-import { MOCK_ACTIVITIES, MOCK_INVITATIONS } from '../utils/mockData';
 
 interface ActivityState {
   activities: Activity[];
@@ -26,12 +25,12 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
   loadActivities: async () => {
     set({ isLoading: true });
     await new Promise((r) => setTimeout(r, 400));
-    set({ activities: MOCK_ACTIVITIES, isLoading: false });
+    set({ activities: [], isLoading: false });
   },
 
   loadInvitations: async () => {
     await new Promise((r) => setTimeout(r, 300));
-    set({ invitations: MOCK_INVITATIONS });
+    set({ invitations: [] });
   },
 
   acceptInvitation: async (invitationId: string) => {

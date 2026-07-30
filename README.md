@@ -1,56 +1,96 @@
-# Welcome to your Expo app 👋
+<div align="center">
+  <img src="assets/images/icon.png" width="120" height="120" alt="Streaker Logo" />
+  <h1>Streaker 🔥</h1>
+  <p><strong>A Social Habit Tracking & Accountability App</strong></p>
+</div>
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Streaker is a modern, gamified habit-tracking application built with React Native and Supabase. It allows users to create solo or group streaks, invest virtual coins as buy-ins, and verify each other's check-ins to build consistency and accountability.
 
-## Get started
+---
 
-1. Install dependencies
+## ✨ Features
 
-   ```bash
-   npm install
-   ```
+- **Solo & Group Streaks**: Track habits individually or invite friends to build habits together.
+- **Coin Buy-Ins**: Gamify your habits! Stake virtual coins when joining a streak. Miss a day, and you lose them to the rest of the group.
+- **Social Accountability**: Group check-ins go into a "Pending Verification" state. A group member must approve your check-in for it to count.
+- **Global Leaderboard**: Compete with friends and the global community to earn the most coins and maintain the highest completion rates.
+- **Live Activity Feed**: See when your friends join streaks, check in, hit milestones, or miss a day in real-time.
 
-2. Start the app
+---
 
-   ```bash
-   npx expo start
-   ```
+## 🛠 Tech Stack
 
-In the output, you'll find options to open the app in a
+- **Frontend**: [React Native](https://reactnative.dev/) / [Expo](https://expo.dev/) (File-based routing with Expo Router)
+- **Styling**: [NativeWind](https://www.nativewind.dev/) (Tailwind CSS for React Native)
+- **State Management**: [Zustand](https://github.com/pmndrs/zustand)
+- **Backend & Database**: [Supabase](https://supabase.com/) (PostgreSQL, Authentication, Row Level Security, Realtime Subscriptions)
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 🚀 Getting Started
 
-## Get a fresh project
+Follow these instructions to get a local copy up and running.
 
-When you're ready, run:
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18 or newer recommended)
+- [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
+- Expo Go app on your iOS/Android device, or a configured iOS Simulator / Android Emulator.
+- A free [Supabase](https://supabase.com/) account.
+
+### 1. Clone the Repository
 
 ```bash
-npm run reset-project
+git clone https://github.com/your-username/streaker.git
+cd streaker
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 2. Install Dependencies
 
-### Other setup steps
+```bash
+npm install
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+### 3. Setup Supabase
 
-## Learn more
+1. Create a new project in your Supabase dashboard.
+2. Go to the **SQL Editor** in Supabase and run the provided schema scripts to set up the database and permissions.
+3. Go to **Project Settings -> API** to get your API URL and `anon` public key.
 
-To learn more about developing your project with Expo, look at the following resources:
+### 4. Configure Environment Variables
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Create a `.env` file in the root of the project and add your Supabase credentials:
 
-## Join the community
+```env
+EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-Join our community of developers creating universal apps.
+### 5. Start the App
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+npx expo start
+```
+
+Press `a` to open in Android Emulator, `i` to open in iOS Simulator, or scan the QR code with the Expo Go app on your physical device.
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions from the community! Whether you want to fix a bug, add a feature, or improve documentation, your help is appreciated.
+
+Please see our [CONTRIBUTING.md](CONTRIBUTING.md) file for detailed guidelines on how to submit pull requests, report issues, and follow our coding standards.
+
+### How to Contribute
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.

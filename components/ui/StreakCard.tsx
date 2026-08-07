@@ -69,7 +69,7 @@ export function StreakCard({ streak }: StreakCardProps) {
       <ProgressBar
         progress={progress}
         height={6}
-        color={checkInStatus === 'verified' ? COLORS.success : checkInStatus === 'pending' ? COLORS.warning : COLORS.accentOrange}
+        color={checkInStatus === 'verified' ? COLORS.success : checkInStatus === 'pending' ? COLORS.accentAmber : COLORS.accentOrange}
         className="mb-3"
       />
 

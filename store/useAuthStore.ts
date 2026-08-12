@@ -3,9 +3,11 @@
 // ============================================================
 
 import { create } from 'zustand';
+import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
 import type { User, RegisterForm, LoginForm } from '../types';
 import { COINS } from '../utils/constants';
+import { getAuthErrorMessage } from '../utils/helpers';
 
 interface AuthState {
   user: User | null;
@@ -89,7 +91,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
       });
     } catch (err: any) {
-      set({ error: err.message || 'Login failed', isLoading: false });
+      set({ error: getAuthErrorMessage(err), isLoading: false });
     }
   },
 
@@ -104,6 +106,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             username: form.username,
             display_name: form.display_name,
           },
+          emailRedirectTo: Linking.createURL('/'),
         },
       });
 
@@ -128,7 +131,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
       });
     } catch (err: any) {
-      set({ error: err.message || 'Registration failed', isLoading: false });
+      set({ error: getAuthErrorMessage(err), isLoading: false });
     }
   },
 

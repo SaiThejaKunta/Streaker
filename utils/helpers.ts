@@ -267,6 +267,28 @@ export function isValidPassword(password: string): boolean {
   return password.length >= 6;
 }
 
+/**
+ * Turn a Supabase auth error into a short, user-facing message.
+ * Supabase can surface raw server/transport error dumps for some
+ * failures (e.g. a database trigger error), so unrecognized or
+ * oversized messages are replaced with a generic fallback instead
+ * of being shown as-is.
+ */
+export function getAuthErrorMessage(err: any): string {
+  const raw = typeof err?.message === 'string' ? err.message : String(err ?? '');
+
+  if (raw.includes('profiles_username_key')) {
+    return 'That username is already taken. Please choose another.';
+  }
+  if (raw.toLowerCase().includes('already registered') || raw.includes('users_email')) {
+    return 'An account with this email already exists.';
+  }
+  if (!raw.trim() || raw.trim().startsWith('{') || raw.length > 200) {
+    return 'Something went wrong. Please try again.';
+  }
+  return raw;
+}
+
 // ---- Misc ----
 
 /**

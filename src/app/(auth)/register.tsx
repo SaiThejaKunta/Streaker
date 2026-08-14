@@ -60,10 +60,11 @@ export default function RegisterScreen() {
   return (
     <KeyboardAwareScrollView
       className="flex-1 bg-[#0F0F1A]"
-      contentContainerStyle={{ flexGrow: 1 }}
+      contentContainerStyle={{ flexGrow: 1, paddingBottom: 120 }}
       keyboardShouldPersistTaps="handled"
       enableOnAndroid
       extraScrollHeight={20}
+      extraHeight={150}
     >
         <View className="flex-1 px-6 pt-16 pb-8">
           {/* Header */}

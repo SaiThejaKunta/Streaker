@@ -112,6 +112,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (error) throw error;
       if (!data.user) throw new Error('Registration failed');
+      
+      // If email confirmation is required, session will be null
+      if (!data.session) {
+        throw new Error('Please check your email to confirm your account before logging in.');
+      }
 
       // Profile is auto-created via trigger, but we need to fetch it
       // Add a slight delay to ensure trigger finishes

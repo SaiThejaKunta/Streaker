@@ -228,7 +228,7 @@ function LeaderboardRow({ entry, currentUser }: { entry: LeaderboardEntry, curre
 }
 
 // ---- Activity Feed ----
-function FeedTab({ activities, setActivities }: { activities: any[], setActivities: (val: any) => void }) {
+function FeedTab({ activities, setActivities }: { activities: any[], setActivities: React.Dispatch<React.SetStateAction<any[]>> }) {
   const { verifyCheckIn, invitations, acceptInvitation, declineInvitation, loadInvitations } = useActivityStore();
   const currentUser = useAuthStore(s => s.user);
   const [loadingId, setLoadingId] = useState<string | null>(null);

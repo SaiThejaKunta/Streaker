@@ -34,7 +34,7 @@ export type StreakType = 'solo' | 'group';
 
 export interface Streak {
   id: string;
-  creator_id: string;
+  created_by: string;
   name: string;
   emoji: string;
   description: string | null;

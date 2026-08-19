@@ -54,12 +54,12 @@ npm install
 ### 3. Setup Supabase
 
 1. Create a new project in your Supabase dashboard.
-2. Go to the **SQL Editor** in Supabase and run the provided schema scripts to set up the database and permissions.
+2. Go to the **SQL Editor** in Supabase and run [`supabase/schema.sql`](supabase/schema.sql) to set up the tables, functions, triggers, and Row Level Security policies.
 3. Go to **Project Settings -> API** to get your API URL and `anon` public key.
 
 ### 4. Configure Environment Variables
 
-Create a `.env` file in the root of the project and add your Supabase credentials:
+Copy `.env.example` to `.env` in the root of the project and fill in your Supabase credentials from step 3 above:
 
 ```env
 EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url

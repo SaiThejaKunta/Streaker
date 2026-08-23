@@ -9,10 +9,11 @@ import { COLORS } from '../../../utils/constants';
 
 function TabIcon({ emoji, label, focused }: { emoji: string; label: string; focused: boolean }) {
   return (
-    <View className="items-center justify-center pt-2">
-      <Text className={`text-lg ${focused ? '' : 'opacity-50'}`}>{emoji}</Text>
+    <View className="items-center justify-center pt-2 w-16">
+      <Text className={`text-xl ${focused ? '' : 'opacity-50'}`}>{emoji}</Text>
       <Text
-        className={`text-[10px] mt-0.5 font-medium ${focused ? 'text-orange-400' : 'text-gray-500'}`}
+        numberOfLines={1}
+        className={`text-xs mt-1 font-medium ${focused ? 'text-orange-400' : 'text-gray-500'}`}
       >
         {label}
       </Text>

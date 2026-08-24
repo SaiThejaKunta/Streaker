@@ -95,7 +95,7 @@ export default function WelcomeScreen() {
         />
 
         {/* Dots */}
-        <View className="flex-row items-center justify-center mt-8 gap-2">
+        <View className="flex-row items-center justify-center mt-4 mb-8 gap-2">
           {SLIDES.map((_, i) => (
             <View
               key={i}

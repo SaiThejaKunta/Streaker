@@ -25,6 +25,7 @@ interface AuthState {
   clearError: () => void;
   setUser: (user: User) => void;
   hydrate: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -162,6 +163,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         .eq('id', user.id);
     } catch (e) {
       console.error('Failed to update profile', e);
+    }
+  },
+
+  refreshUser: async () => {
+    const { user } = get();
+    if (!user) return;
+
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+      if (profile) set({ user: profile as User });
+    } catch (e) {
+      console.error('Failed to refresh user', e);
     }
   },
 

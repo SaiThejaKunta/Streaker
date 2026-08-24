@@ -4,7 +4,7 @@
 
 import React, { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Switch } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useStreakStore } from '../../../store/useStreakStore';
 import {
@@ -23,9 +23,16 @@ import { formatDateDisplay, formatCoins, getRelativeTime, formatNumber } from '.
 export default function ProfileScreen() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const refreshUser = useAuthStore((s) => s.refreshUser);
   const { getMyStreaks } = useStreakStore();
   const [viewMode, setViewMode] = useState<'public' | 'private'>('public');
   const myStreaks = getMyStreaks();
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshUser();
+    }, [])
+  );
   
   const stats = React.useMemo(() => {
     let longest_streak = 0;

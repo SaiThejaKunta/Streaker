@@ -55,8 +55,13 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
         .eq('status', 'pending');
         
       if (error) throw error;
-      
-      set({ invitations: data || [] });
+
+      const invitations = (data || []).map((inv: any) => ({
+        ...inv,
+        streak: inv.streak ? { ...inv.streak, coin_buy_in: inv.streak.buy_in || 0 } : inv.streak,
+      }));
+
+      set({ invitations });
     } catch (err) {
       console.error("loadInvitations err:", err);
     }

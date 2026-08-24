@@ -26,11 +26,13 @@ import { getTodaysQuote, formatNumber } from '../../../utils/helpers';
 export default function HomeScreen() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const refreshUser = useAuthStore((s) => s.refreshUser);
   const { loadStreaks, getMyStreaks, isLoading, checkIns } = useStreakStore();
 
   useFocusEffect(
     React.useCallback(() => {
       loadStreaks();
+      refreshUser();
     }, [])
   );
 
@@ -62,6 +64,7 @@ export default function HomeScreen() {
 
   const handleRefresh = () => {
     loadStreaks();
+    refreshUser();
   };
 
   return (

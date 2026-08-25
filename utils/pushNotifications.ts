@@ -15,13 +15,18 @@ Notifications.setNotificationHandler({
   }),
 });
 
+export interface PushRegistrationResult {
+  token: string | null;
+  /** Non-null whenever token is null, so callers/debugging can see why. */
+  error: string | null;
+}
+
 /**
- * Requests notification permission and returns an Expo push token, or null
- * if permission was denied or a token couldn't be obtained (e.g. running in
- * an environment - like plain Expo Go on Android - that doesn't support it).
- * Never throws; callers should treat null as "skip, no push for this user".
+ * Requests notification permission and returns an Expo push token. Never
+ * throws - on any failure (permission denied, no projectId, API error),
+ * token is null and error explains what happened.
  */
-export async function registerForPushNotificationsAsync(): Promise<string | null> {
+export async function registerForPushNotificationsAsync(): Promise<PushRegistrationResult> {
   try {
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
@@ -38,15 +43,18 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       finalStatus = status;
     }
 
-    if (finalStatus !== 'granted') return null;
+    if (finalStatus !== 'granted') {
+      return { token: null, error: `PERMISSION_${finalStatus.toUpperCase()}` };
+    }
 
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    if (!projectId) return null;
+    if (!projectId) {
+      return { token: null, error: 'MISSING_PROJECT_ID' };
+    }
 
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
-    return token;
+    return { token, error: null };
   } catch (e) {
-    console.error('Failed to register for push notifications', e);
-    return null;
+    return { token: null, error: `EXCEPTION: ${String(e)}`.slice(0, 500) };
   }
 }

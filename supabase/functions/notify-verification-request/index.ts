@@ -61,7 +61,9 @@ Deno.serve(async (req) => {
 
     const tokens = (recipients || [])
       .map((r: any) => r.profiles?.push_token)
-      .filter((t: string | null): t is string => Boolean(t));
+      // ExponentPushToken[...] only - excludes the temporary "ERR:..."
+      // diagnostic strings saved when registration fails client-side.
+      .filter((t: string | null): t is string => Boolean(t) && t!.startsWith('ExponentPushToken'));
 
     if (tokens.length === 0) {
       return new Response(JSON.stringify({ sent: 0, reason: 'no recipients with a push token' }), {

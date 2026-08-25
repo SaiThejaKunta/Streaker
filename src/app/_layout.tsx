@@ -22,10 +22,11 @@ function usePushNotifications(isAuthenticated: boolean) {
   // notify-verification-request, which sends to whatever's saved here).
   useEffect(() => {
     if (!isAuthenticated) return;
-    registerForPushNotificationsAsync().then((token) => {
-      if (token) {
-        useAuthStore.getState().updateProfile({ push_token: token });
-      }
+    registerForPushNotificationsAsync().then(({ token, error }) => {
+      // TEMP DIAGNOSTIC: on failure, save the error reason (prefixed so it's
+      // never mistaken for a real token) so it's readable via SQL without a
+      // dev-client console. Remove this fallback once push is confirmed working.
+      useAuthStore.getState().updateProfile({ push_token: token ?? `ERR:${error}` });
     });
   }, [isAuthenticated]);
 

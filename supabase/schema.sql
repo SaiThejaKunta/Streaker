@@ -91,6 +91,17 @@ CREATE TABLE public.invitations (
   CONSTRAINT invitations_invitee_id_fkey FOREIGN KEY (invitee_id) REFERENCES public.profiles(id)
 );
 
+CREATE TABLE public.redistribution_log (
+  streak_id uuid NOT NULL,
+  target_date date NOT NULL,
+  missed_count integer NOT NULL,
+  recipient_count integer NOT NULL,
+  share_per_recipient integer NOT NULL,
+  processed_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT redistribution_log_pkey PRIMARY KEY (streak_id, target_date),
+  CONSTRAINT redistribution_log_streak_id_fkey FOREIGN KEY (streak_id) REFERENCES public.streaks(id) ON DELETE CASCADE
+);
+
 -- ---- Functions ----
 
 -- Auto-creates a profile row whenever a new user signs up via Supabase Auth.
@@ -155,6 +166,96 @@ BEGIN
 END;
 $$;
 
+-- Redistributes a missed group-streak member's day-10-coin reward equally
+-- among the active members who DID check in that day (any check_ins row for
+-- streak/user/day counts as "done", regardless of verified/rejected status -
+-- existence by day's end is the only signal available). Called once per
+-- (streak, day) by the daily `redistribute-missed-days` Edge Function, using
+-- UTC calendar days since there's no per-user timezone stored.
+--
+-- Idempotent via `redistribution_log`: a second call for the same
+-- streak/day is a no-op, so a retried cron invocation can't double-apply.
+-- Rejects `p_target_date` that isn't strictly in the past as defense in
+-- depth against calling it for a day that hasn't finished yet (see EXECUTE
+-- grants below - only service_role should ever be able to call this).
+CREATE OR REPLACE FUNCTION public.redistribute_missed_day_coins(p_streak_id uuid, p_target_date date)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_daily_reward CONSTANT integer := 10; -- mirrors COINS.DAILY_REWARD_BASE in utils/constants.ts
+  -- Explicit UTC conversion: casting date straight to timestamptz would
+  -- interpret midnight using the session's TimeZone setting instead.
+  v_day_start CONSTANT timestamptz := p_target_date::timestamp AT TIME ZONE 'utc';
+  v_day_end CONSTANT timestamptz := (p_target_date + 1)::timestamp AT TIME ZONE 'utc';
+  v_missed_count integer;
+  v_recipient_count integer;
+  v_share integer := 0;
+BEGIN
+  IF p_target_date >= (now() AT TIME ZONE 'utc')::date THEN
+    RETURN;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.redistribution_log
+    WHERE streak_id = p_streak_id AND target_date = p_target_date
+  ) THEN
+    RETURN;
+  END IF;
+
+  -- Active members present in the group by day's end, split into who
+  -- checked in that day vs who didn't. joined_at guards against penalizing
+  -- someone for days before they joined the streak.
+  SELECT count(*) INTO v_missed_count
+  FROM public.streak_members sm
+  WHERE sm.streak_id = p_streak_id AND sm.status = 'active' AND sm.joined_at < v_day_end
+    AND NOT EXISTS (
+      SELECT 1 FROM public.check_ins ci
+      WHERE ci.streak_id = p_streak_id AND ci.user_id = sm.user_id
+        AND ci.created_at >= v_day_start AND ci.created_at < v_day_end
+    );
+
+  SELECT count(*) INTO v_recipient_count
+  FROM public.streak_members sm
+  WHERE sm.streak_id = p_streak_id AND sm.status = 'active' AND sm.joined_at < v_day_end
+    AND EXISTS (
+      SELECT 1 FROM public.check_ins ci
+      WHERE ci.streak_id = p_streak_id AND ci.user_id = sm.user_id
+        AND ci.created_at >= v_day_start AND ci.created_at < v_day_end
+    );
+
+  IF v_missed_count > 0 AND v_recipient_count > 0 THEN
+    v_share := floor((v_missed_count * v_daily_reward) / v_recipient_count);
+  END IF;
+
+  IF v_share > 0 THEN
+    UPDATE public.profiles
+    SET coin_balance = coin_balance + v_share
+    WHERE id IN (
+      SELECT sm.user_id
+      FROM public.streak_members sm
+      WHERE sm.streak_id = p_streak_id AND sm.status = 'active' AND sm.joined_at < v_day_end
+        AND EXISTS (
+          SELECT 1 FROM public.check_ins ci
+          WHERE ci.streak_id = p_streak_id AND ci.user_id = sm.user_id
+            AND ci.created_at >= v_day_start AND ci.created_at < v_day_end
+        )
+    );
+  END IF;
+
+  INSERT INTO public.redistribution_log (streak_id, target_date, missed_count, recipient_count, share_per_recipient)
+  VALUES (p_streak_id, p_target_date, v_missed_count, v_recipient_count, v_share)
+  ON CONFLICT (streak_id, target_date) DO NOTHING;
+END;
+$$;
+
+-- Only the cron Edge Function (via its service_role key) may call this -
+-- unlike delete_streak, this function has no internal auth.uid() check,
+-- since it isn't meant to be triggered by a regular user action at all.
+REVOKE EXECUTE ON FUNCTION public.redistribute_missed_day_coins(uuid, date) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.redistribute_missed_day_coins(uuid, date) TO service_role;
+
 -- ---- Triggers ----
 
 CREATE TRIGGER on_auth_user_created
@@ -169,6 +270,10 @@ ALTER TABLE public.streak_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.check_ins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invitations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.redistribution_log ENABLE ROW LEVEL SECURITY;
+-- No policies: redistribution_log is an internal audit trail written only by
+-- redistribute_missed_day_coins (SECURITY DEFINER); service_role bypasses
+-- RLS entirely, and no client role needs to read or write it.
 
 -- profiles
 CREATE POLICY "Public profiles are viewable by everyone." ON public.profiles FOR SELECT USING (true);

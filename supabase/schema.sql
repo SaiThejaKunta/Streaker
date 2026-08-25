@@ -20,6 +20,7 @@ CREATE TABLE public.profiles (
   display_name text NOT NULL,
   bio text,
   coin_balance integer NOT NULL DEFAULT 1000,
+  push_token text,
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)

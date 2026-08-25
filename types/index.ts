@@ -11,6 +11,7 @@ export interface User {
   bio: string | null;
   coin_balance: number;
   is_public: boolean;
+  push_token: string | null;
   created_at: string;
   updated_at: string;
 }

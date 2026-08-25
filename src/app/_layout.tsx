@@ -3,14 +3,55 @@
 // ============================================================
 
 import React, { useEffect, useState } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, Text } from 'react-native';
 import * as Updates from 'expo-updates';
+import * as Notifications from 'expo-notifications';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useStreakStore } from '../../store/useStreakStore';
+import { registerForPushNotificationsAsync } from '../../utils/pushNotifications';
 
 import '../global.css';
+
+function usePushNotifications(isAuthenticated: boolean) {
+  const router = useRouter();
+
+  // Request permission + save the push token once per login, so other
+  // members' check-ins can reach this device (see supabase/functions/
+  // notify-verification-request, which sends to whatever's saved here).
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    registerForPushNotificationsAsync().then((token) => {
+      if (token) {
+        useAuthStore.getState().updateProfile({ push_token: token });
+      }
+    });
+  }, [isAuthenticated]);
+
+  // Tapping a notification deep-links into the Feed tab, highlighting the
+  // specific check-in it was about (see explore.tsx's activityId param).
+  useEffect(() => {
+    const goToActivity = (activityId: string | undefined) => {
+      router.push({ pathname: '/(tabs)/explore', params: { tab: 'feed', activityId } });
+    };
+
+    // Covers taps while the app is foregrounded/backgrounded.
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      goToActivity(response.notification.request.content.data?.activityId as string | undefined);
+    });
+
+    // Covers a cold start - the app was fully closed and got launched by
+    // the tap itself, which the listener above never sees.
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        goToActivity(response.notification.request.content.data?.activityId as string | undefined);
+      }
+    });
+
+    return () => sub.remove();
+  }, [router]);
+}
 
 type UpdateStatus = 'idle' | 'downloading' | 'ready';
 
@@ -75,6 +116,7 @@ export default function RootLayout() {
   const { isAuthenticated, isHydrated, hydrate } = useAuthStore();
   const { loadStreaks } = useStreakStore();
   const updateStatus = useOTAUpdateCheck();
+  usePushNotifications(isAuthenticated);
 
   useEffect(() => {
     hydrate();

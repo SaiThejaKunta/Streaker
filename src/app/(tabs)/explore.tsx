@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   TextInput,
 } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import {
   Card,
   Avatar,
@@ -28,7 +29,8 @@ import { useActivityStore } from '../../../store/useActivityStore';
 type Tab = 'leaderboard' | 'feed' | 'discover';
 
 export default function ExploreScreen() {
-  const [activeTab, setActiveTab] = useState<Tab>('leaderboard');
+  const params = useLocalSearchParams<{ tab?: string; activityId?: string }>();
+  const [activeTab, setActiveTab] = useState<Tab>(params.tab === 'feed' ? 'feed' : 'leaderboard');
   const [searchQuery, setSearchQuery] = useState('');
   
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -146,7 +148,9 @@ export default function ExploreScreen() {
 
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 100 }}>
         {activeTab === 'leaderboard' && <LeaderboardTab data={leaderboard} currentUser={currentUser} />}
-        {activeTab === 'feed' && <FeedTab activities={activities} setActivities={setActivities} />}
+        {activeTab === 'feed' && (
+          <FeedTab activities={activities} setActivities={setActivities} highlightId={params.activityId} />
+        )}
         {activeTab === 'discover' && <DiscoverTab users={discoverUsers} />}
       </ScrollView>
     </View>
@@ -228,7 +232,7 @@ function LeaderboardRow({ entry, currentUser }: { entry: LeaderboardEntry, curre
 }
 
 // ---- Activity Feed ----
-function FeedTab({ activities, setActivities }: { activities: any[], setActivities: React.Dispatch<React.SetStateAction<any[]>> }) {
+function FeedTab({ activities, setActivities, highlightId }: { activities: any[], setActivities: React.Dispatch<React.SetStateAction<any[]>>, highlightId?: string }) {
   const { verifyCheckIn, invitations, acceptInvitation, declineInvitation, loadInvitations } = useActivityStore();
   const currentUser = useAuthStore(s => s.user);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -299,8 +303,10 @@ function FeedTab({ activities, setActivities }: { activities: any[], setActiviti
         const user = activity.user;
         if (!user) return null;
 
+        const isHighlighted = activity.id === highlightId;
+
         return (
-          <Card key={activity.id} className="mb-3">
+          <Card key={activity.id} className={`mb-3 ${isHighlighted ? 'border-orange-500 border-2' : ''}`}>
             <View className="flex-row items-start">
               <Avatar
                 uri={user.avatar_url}

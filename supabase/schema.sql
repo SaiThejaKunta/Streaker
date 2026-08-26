@@ -21,6 +21,7 @@ CREATE TABLE public.profiles (
   bio text,
   coin_balance integer NOT NULL DEFAULT 1000,
   push_token text,
+  avatar_url text,
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
@@ -318,3 +319,16 @@ CREATE POLICY "Anyone can update activities." ON public.activities FOR UPDATE US
 CREATE POLICY "Invitations viewable by invitee and inviter" ON public.invitations FOR SELECT USING (auth.uid() = invitee_id OR auth.uid() = inviter_id);
 CREATE POLICY "Users can create invitations" ON public.invitations FOR INSERT WITH CHECK (auth.uid() = inviter_id);
 CREATE POLICY "Invitees can update invitations" ON public.invitations FOR UPDATE USING (auth.uid() = invitee_id);
+
+-- ---- Storage ----
+-- `avatars` bucket (public: true) - profile picture uploads. Object path is
+-- always the uploading user's own auth.uid() (no folders/extension), so
+-- ownership is enforced by comparing that path (`name`) directly.
+-- NOTE: storage.objects requires a SELECT policy for its own sake here -
+-- the upload path uses `INSERT ... ON CONFLICT DO UPDATE ... RETURNING *`
+-- (upsert: true client-side), and RETURNING silently drops the row (which
+-- the Storage API then reports as an RLS/auth failure) without one, even
+-- though the row was actually written.
+CREATE POLICY "Avatar images are publicly accessible" ON storage.objects FOR SELECT USING (bucket_id = 'avatars');
+CREATE POLICY "Users can upload their own avatar" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'avatars' AND auth.uid()::text = name);
+CREATE POLICY "Users can update their own avatar" ON storage.objects FOR UPDATE USING (bucket_id = 'avatars' AND auth.uid()::text = name);

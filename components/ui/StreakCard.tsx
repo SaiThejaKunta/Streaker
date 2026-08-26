@@ -19,7 +19,8 @@ interface StreakCardProps {
 export function StreakCard({ streak }: StreakCardProps) {
   const router = useRouter();
   const { getTodayCheckInStatus } = useStreakStore();
-  const userId = useAuthStore((s) => s.user?.id) || '';
+  const currentUser = useAuthStore((s) => s.user);
+  const userId = currentUser?.id || '';
   const currentDay = getCurrentDayNumber(streak.start_date);
   const progress = getStreakProgress(streak.start_date, streak.target_days);
   const checkInStatus = getTodayCheckInStatus(streak.id, userId);
@@ -81,7 +82,7 @@ export function StreakCard({ streak }: StreakCardProps) {
               users={members
                 .filter((m): m is StreakMember & { user: NonNullable<StreakMember['user']> } => !!m.user)
                 .map((m) => ({
-                  avatar_url: m.user.avatar_url,
+                  avatar_url: m.user.id === userId ? currentUser?.avatar_url : m.user.avatar_url,
                   display_name: m.user.display_name,
                 }))}
               max={3}

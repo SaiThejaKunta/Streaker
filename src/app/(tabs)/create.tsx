@@ -42,7 +42,7 @@ export default function CreateStreakScreen() {
     invitee_ids: [],
   });
 
-  const buyIn = form.is_group ? calculateBuyIn(form.target_days) : 0;
+  const buyIn = calculateBuyIn(form.target_days);
   const canAfford = (user?.coin_balance || 0) >= buyIn;
 
   React.useEffect(() => {
@@ -280,35 +280,33 @@ export default function CreateStreakScreen() {
           )}
 
           {/* Coin Buy-In Info */}
-          {form.is_group && (
-            <Card className="mb-4 bg-amber-500/5 border-amber-500/30">
-              <View className="flex-row items-center mb-2">
-                <Text className="text-xl mr-2">🪙</Text>
-                <Text className="text-amber-400 font-bold text-lg">
-                  Coin Investment
+          <Card className="mb-4 bg-amber-500/5 border-amber-500/30">
+            <View className="flex-row items-center mb-2">
+              <Text className="text-xl mr-2">🪙</Text>
+              <Text className="text-amber-400 font-bold text-lg">
+                Coin Investment
+              </Text>
+            </View>
+            <Text className="text-gray-300 text-sm leading-5">
+              {form.is_group ? 'Each member invests ' : 'You invest '}
+              <Text className="text-amber-400 font-bold">{buyIn} coins</Text>
+              {' '}({form.target_days} days × 10 coins).
+            </Text>
+            <Text className="text-gray-400 text-xs mt-2">
+              Complete daily to earn back + bonus. Miss a day and your remaining coins get shared!
+            </Text>
+            {!canAfford && (
+              <View className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mt-3">
+                <Text className="text-red-400 text-sm">
+                  ⚠️ You need {buyIn - (user?.coin_balance || 0)} more coins for this streak
                 </Text>
               </View>
-              <Text className="text-gray-300 text-sm leading-5">
-                Each member invests{' '}
-                <Text className="text-amber-400 font-bold">{buyIn} coins</Text>
-                {' '}({form.target_days} days × 10 coins).
-              </Text>
-              <Text className="text-gray-400 text-xs mt-2">
-                Complete daily to earn back + bonus. Miss a day and your remaining coins get shared!
-              </Text>
-              {!canAfford && (
-                <View className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mt-3">
-                  <Text className="text-red-400 text-sm">
-                    ⚠️ You need {buyIn - (user?.coin_balance || 0)} more coins for this streak
-                  </Text>
-                </View>
-              )}
-            </Card>
-          )}
+            )}
+          </Card>
 
           {/* Create Button */}
           <Button
-            title={form.is_group ? `Create & Invest ${buyIn} 🪙` : 'Create Streak 🔥'}
+            title={`Create & Invest ${buyIn} 🪙`}
             onPress={handleCreate}
             loading={isLoading}
             disabled={!canAfford || !form.name.trim()}
@@ -331,13 +329,11 @@ export default function CreateStreakScreen() {
             {form.target_days} days · {form.is_group ? 'Group' : 'Solo'} · {form.is_public ? 'Public' : 'Private'}
           </Text>
         </View>
-        {form.is_group && (
-          <View className="bg-amber-500/10 rounded-xl p-3 mb-4">
-            <Text className="text-amber-400 text-center font-semibold">
-              Investment: {buyIn} 🪙
-            </Text>
-          </View>
-        )}
+        <View className="bg-amber-500/10 rounded-xl p-3 mb-4">
+          <Text className="text-amber-400 text-center font-semibold">
+            Investment: {buyIn} 🪙
+          </Text>
+        </View>
         <View className="flex-row gap-3">
           <Button
             title="Cancel"

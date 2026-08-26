@@ -38,7 +38,8 @@ export default function StreakDetailScreen() {
   const router = useRouter();
   const { getStreakById, getCalendarDays, getStreakMembers, getTodayCheckInStatus, deleteStreak } =
     useStreakStore();
-  const userId = useAuthStore((s) => s.user?.id) || '';
+  const currentUser = useAuthStore((s) => s.user);
+  const userId = currentUser?.id || '';
   const [activeTab, setActiveTab] = useState<Tab>('calendar');
 
   const streak = getStreakById(id!);
@@ -272,7 +273,7 @@ export default function StreakDetailScreen() {
               <Card key={member.id} className="mb-2">
                 <View className="flex-row items-center">
                   <Avatar
-                    uri={member.user?.avatar_url}
+                    uri={member.user?.id === userId ? currentUser?.avatar_url : member.user?.avatar_url}
                     name={member.user?.display_name || '?'}
                     size="md"
                     className="mr-3"
@@ -312,7 +313,7 @@ export default function StreakDetailScreen() {
                       {medal || `#${member.rank}`}
                     </Text>
                     <Avatar
-                      uri={member.user?.avatar_url}
+                      uri={member.user?.id === userId ? currentUser?.avatar_url : member.user?.avatar_url}
                       name={member.user?.display_name || '?'}
                       size="sm"
                       className="mr-3"

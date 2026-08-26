@@ -3,7 +3,9 @@
 // ============================================================
 
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Switch } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Switch, Alert, ActivityIndicator } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { uploadImageToSupabase } from '../../../lib/supabase';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useStreakStore } from '../../../store/useStreakStore';
@@ -16,6 +18,7 @@ import {
   ProgressBar,
   Divider,
   Button,
+  Modal,
 } from '../../../components/ui';
 import { ACHIEVEMENTS, COLORS } from '../../../utils/constants';
 import { formatDateDisplay, formatCoins, getRelativeTime, formatNumber } from '../../../utils/helpers';
@@ -23,9 +26,12 @@ import { formatDateDisplay, formatCoins, getRelativeTime, formatNumber } from '.
 export default function ProfileScreen() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const updateProfile = useAuthStore((s) => s.updateProfile);
   const refreshUser = useAuthStore((s) => s.refreshUser);
   const { getMyStreaks } = useStreakStore();
   const [viewMode, setViewMode] = useState<'public' | 'private'>('public');
+  const [isUploading, setIsUploading] = useState(false);
+  const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const myStreaks = getMyStreaks();
 
   useFocusEffect(
@@ -33,6 +39,59 @@ export default function ProfileScreen() {
       refreshUser();
     }, [])
   );
+  
+  const pickProfilePicture = async () => {
+    if (!user) return;
+    
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission needed', 'Please allow access to your photos to change your profile picture.');
+      return;
+    }
+    
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+      base64: true,
+    });
+    
+    if (!result.canceled && result.assets[0] && result.assets[0].base64) {
+      setIsUploading(true);
+      try {
+        const base64Str = result.assets[0].base64;
+        // The bucket is 'avatars', and the file path is the user's ID
+        const publicUrl = await uploadImageToSupabase(base64Str, 'avatars', user.id);
+        
+        // Update user profile in state and database
+        await updateProfile({ avatar_url: publicUrl });
+      } catch (err: any) {
+        Alert.alert('Upload Failed', err.message || 'Could not upload image.');
+      } finally {
+        setIsUploading(false);
+      }
+    }
+    setShowAvatarMenu(false);
+  };
+  
+  const removeProfilePicture = async () => {
+    setShowAvatarMenu(false);
+    if (!user) return;
+    setIsUploading(true);
+    try {
+      await updateProfile({ avatar_url: null });
+    } catch (err: any) {
+      Alert.alert('Remove Failed', err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleAvatarPress = () => {
+    if (!user) return;
+    setShowAvatarMenu(true);
+  };
   
   const stats = React.useMemo(() => {
     let longest_streak = 0;
@@ -78,11 +137,30 @@ export default function ProfileScreen() {
         <View className="px-5 mt-4">
           <Card>
             <View className="items-center">
-              <Avatar
-                uri={user?.avatar_url}
-                name={user?.display_name || '?'}
-                size="xl"
-              />
+              <TouchableOpacity 
+                onPress={handleAvatarPress} 
+                disabled={isUploading}
+                className="relative"
+                activeOpacity={0.8}
+              >
+                <Avatar
+                  uri={user?.avatar_url}
+                  name={user?.display_name || '?'}
+                  size="xl"
+                />
+                
+                {/* Edit Badge */}
+                <View className="absolute bottom-0 right-0 bg-[#2A2A45] rounded-full p-2 border-2 border-[#1A1A2E]">
+                  <Text className="text-xs">✏️</Text>
+                </View>
+                
+                {/* Loading Overlay */}
+                {isUploading && (
+                  <View className="absolute inset-0 bg-black/50 rounded-full items-center justify-center">
+                    <ActivityIndicator color={COLORS.accentOrange} />
+                  </View>
+                )}
+              </TouchableOpacity>
               <Text className="text-white text-xl font-bold mt-3">
                 {user?.display_name}
               </Text>
@@ -242,6 +320,36 @@ export default function ProfileScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Custom Avatar Menu Modal */}
+      <Modal
+        visible={showAvatarMenu}
+        onClose={() => setShowAvatarMenu(false)}
+        title="Profile Picture"
+      >
+        <View className="gap-3 w-full">
+          <Button 
+            title="Upload New Picture 📸" 
+            onPress={pickProfilePicture} 
+            variant="primary"
+            fullWidth
+          />
+          {user?.avatar_url && (
+            <Button 
+              title="Remove Picture 🗑️" 
+              onPress={removeProfilePicture} 
+              variant="danger"
+              fullWidth
+            />
+          )}
+          <Button 
+            title="Cancel" 
+            onPress={() => setShowAvatarMenu(false)} 
+            variant="ghost"
+            fullWidth
+          />
+        </View>
+      </Modal>
     </View>
   );
 }

@@ -30,30 +30,36 @@ function usePushNotifications(isAuthenticated: boolean, isHydrated: boolean) {
     });
   }, [isAuthenticated]);
 
-  // Tapping a notification deep-links into the Feed tab, highlighting the
-  // specific check-in it was about (see explore.tsx's activityId param).
+  // Tapping a notification deep-links to the relevant screen, routed by the
+  // notification's `type` (see notify-verification-request and
+  // notify-invitation for what each type's data payload contains).
   useEffect(() => {
     // Wait for hydration: on a cold start (app was fully closed, the tap
-    // itself launched it), the <Stack> below - and the /explore route it
-    // contains - hasn't mounted yet while isHydrated is false (RootLayout
-    // renders only the splash view until then). Pushing to a route before
-    // its navigator exists is what was crashing the app to a blank screen.
+    // itself launched it), the <Stack> below - and the routes it contains -
+    // hasn't mounted yet while isHydrated is false (RootLayout renders only
+    // the splash view until then). Pushing to a route before its navigator
+    // exists is what was crashing the app to a blank screen.
     if (!isHydrated) return;
 
-    const goToActivity = (activityId: string | undefined) => {
-      router.push({ pathname: '/(tabs)/explore', params: { tab: 'feed', activityId } });
+    const handleTap = (data: Record<string, unknown> | undefined) => {
+      if (!data) return;
+      if (data.type === 'invitation') {
+        router.push({ pathname: '/(tabs)/activity', params: { tab: 'invites' } });
+      } else {
+        router.push({ pathname: '/(tabs)/explore', params: { tab: 'feed', activityId: data.activityId as string } });
+      }
     };
 
     // Covers taps while the app is foregrounded/backgrounded.
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      goToActivity(response.notification.request.content.data?.activityId as string | undefined);
+      handleTap(response.notification.request.content.data);
     });
 
     // Covers a cold start - the app was fully closed and got launched by
     // the tap itself, which the listener above never sees.
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (response) {
-        goToActivity(response.notification.request.content.data?.activityId as string | undefined);
+        handleTap(response.notification.request.content.data);
       }
     });
 

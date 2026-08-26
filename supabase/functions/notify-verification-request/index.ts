@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
       sound: 'default',
       title: 'Check-in needs verification',
       body: `${checkerInName} checked in on "${streakName}" - tap to verify`,
-      data: { activityId: record.id, streakId: record.streak_id },
+      data: { type: 'verification_request', activityId: record.id, streakId: record.streak_id },
     }));
 
     const pushRes = await fetch('https://exp.host/--/api/v2/push/send', {

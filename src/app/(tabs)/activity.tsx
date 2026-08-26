@@ -4,6 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import {
   Card,
   Avatar,
@@ -22,7 +23,8 @@ type Tab = 'all' | 'invites';
 export default function ActivityScreen() {
   const { activities, invitations, loadActivities, loadInvitations, isLoading, acceptInvitation, declineInvitation } =
     useActivityStore();
-  const [activeTab, setActiveTab] = useState<Tab>('all');
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [activeTab, setActiveTab] = useState<Tab>(params.tab === 'invites' ? 'invites' : 'all');
 
   useEffect(() => {
     loadActivities();

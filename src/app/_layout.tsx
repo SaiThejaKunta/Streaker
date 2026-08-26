@@ -14,7 +14,7 @@ import { registerForPushNotificationsAsync } from '../../utils/pushNotifications
 
 import '../global.css';
 
-function usePushNotifications(isAuthenticated: boolean) {
+function usePushNotifications(isAuthenticated: boolean, isHydrated: boolean) {
   const router = useRouter();
 
   // Request permission + save the push token once per login, so other
@@ -33,6 +33,13 @@ function usePushNotifications(isAuthenticated: boolean) {
   // Tapping a notification deep-links into the Feed tab, highlighting the
   // specific check-in it was about (see explore.tsx's activityId param).
   useEffect(() => {
+    // Wait for hydration: on a cold start (app was fully closed, the tap
+    // itself launched it), the <Stack> below - and the /explore route it
+    // contains - hasn't mounted yet while isHydrated is false (RootLayout
+    // renders only the splash view until then). Pushing to a route before
+    // its navigator exists is what was crashing the app to a blank screen.
+    if (!isHydrated) return;
+
     const goToActivity = (activityId: string | undefined) => {
       router.push({ pathname: '/(tabs)/explore', params: { tab: 'feed', activityId } });
     };
@@ -51,7 +58,7 @@ function usePushNotifications(isAuthenticated: boolean) {
     });
 
     return () => sub.remove();
-  }, [router]);
+  }, [isHydrated, router]);
 }
 
 type UpdateStatus = 'idle' | 'downloading' | 'ready';
@@ -117,7 +124,7 @@ export default function RootLayout() {
   const { isAuthenticated, isHydrated, hydrate } = useAuthStore();
   const { loadStreaks } = useStreakStore();
   const updateStatus = useOTAUpdateCheck();
-  usePushNotifications(isAuthenticated);
+  usePushNotifications(isAuthenticated, isHydrated);
 
   useEffect(() => {
     hydrate();

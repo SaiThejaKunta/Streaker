@@ -2,18 +2,135 @@
 // STREAKER — Root Layout (Auth Gate + Hydration)
 // ============================================================
 
-import React, { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, Text } from 'react-native';
+import * as Updates from 'expo-updates';
+import * as Notifications from 'expo-notifications';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useStreakStore } from '../../store/useStreakStore';
+import { registerForPushNotificationsAsync } from '../../utils/pushNotifications';
 
 import '../global.css';
+
+function usePushNotifications(isAuthenticated: boolean, isHydrated: boolean) {
+  const router = useRouter();
+
+  // Request permission + save the push token once per login, so other
+  // members' check-ins can reach this device (see supabase/functions/
+  // notify-verification-request, which sends to whatever's saved here).
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    registerForPushNotificationsAsync().then(({ token, error }) => {
+      // TEMP DIAGNOSTIC: on failure, save the error reason (prefixed so it's
+      // never mistaken for a real token) so it's readable via SQL without a
+      // dev-client console. Remove this fallback once push is confirmed working.
+      useAuthStore.getState().updateProfile({ push_token: token ?? `ERR:${error}` });
+    });
+  }, [isAuthenticated]);
+
+  // Tapping a notification deep-links to the relevant screen, routed by the
+  // notification's `type` (see notify-verification-request and
+  // notify-invitation for what each type's data payload contains).
+  useEffect(() => {
+    // Wait for hydration: on a cold start (app was fully closed, the tap
+    // itself launched it), the <Stack> below - and the routes it contains -
+    // hasn't mounted yet while isHydrated is false (RootLayout renders only
+    // the splash view until then). Pushing to a route before its navigator
+    // exists is what was crashing the app to a blank screen.
+    if (!isHydrated) return;
+
+    const handleTap = (data: Record<string, unknown> | undefined) => {
+      if (!data) return;
+      if (data.type === 'invitation') {
+        router.push({ pathname: '/(tabs)/activity', params: { tab: 'invites' } });
+      } else {
+        router.push({ pathname: '/(tabs)/explore', params: { tab: 'feed', activityId: data.activityId as string } });
+      }
+    };
+
+    // Covers taps while the app is foregrounded/backgrounded.
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      handleTap(response.notification.request.content.data);
+    });
+
+    // Covers a cold start - the app was fully closed and got launched by
+    // the tap itself, which the listener above never sees.
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        handleTap(response.notification.request.content.data);
+      }
+    });
+
+    return () => sub.remove();
+  }, [isHydrated, router]);
+}
+
+type UpdateStatus = 'idle' | 'downloading' | 'ready';
+
+function useOTAUpdateCheck() {
+  const [status, setStatus] = useState<UpdateStatus>('idle');
+
+  useEffect(() => {
+    if (__DEV__ || !Updates.isEnabled) return;
+
+    (async () => {
+      try {
+        const result = await Updates.checkForUpdateAsync();
+        if (!result.isAvailable) return;
+
+        setStatus('downloading');
+        await Updates.fetchUpdateAsync();
+        setStatus('ready');
+
+        setTimeout(() => {
+          Updates.reloadAsync();
+        }, 1200);
+      } catch (e) {
+        console.error('OTA update check failed:', e);
+      }
+    })();
+  }, []);
+
+  return status;
+}
+
+function UpdateStatusBanner({ status }: { status: UpdateStatus }) {
+  if (status === 'idle') return null;
+
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        top: 56,
+        alignSelf: 'center',
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#1A1A2E',
+        borderWidth: 1,
+        borderColor: '#2A2A45',
+        borderRadius: 20,
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        zIndex: 999,
+      }}
+    >
+      {status === 'downloading' && (
+        <ActivityIndicator size="small" color="#FF6B35" style={{ marginRight: 8 }} />
+      )}
+      <Text style={{ color: '#FAFAFA', fontSize: 13, fontWeight: '500' }}>
+        {status === 'downloading' ? 'Downloading update…' : '✓ Updated — restarting…'}
+      </Text>
+    </View>
+  );
+}
 
 export default function RootLayout() {
   const { isAuthenticated, isHydrated, hydrate } = useAuthStore();
   const { loadStreaks } = useStreakStore();
+  const updateStatus = useOTAUpdateCheck();
+  usePushNotifications(isAuthenticated, isHydrated);
 
   useEffect(() => {
     hydrate();
@@ -31,6 +148,7 @@ export default function RootLayout() {
       <View style={{ flex: 1, backgroundColor: '#0F0F1A', alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontSize: 48, marginBottom: 16 }}>🔥</Text>
         <ActivityIndicator size="large" color="#FF6B35" />
+        <UpdateStatusBanner status={updateStatus} />
       </View>
     );
   }
@@ -38,6 +156,7 @@ export default function RootLayout() {
   return (
     <>
       <StatusBar style="light" />
+      <UpdateStatusBanner status={updateStatus} />
       <Stack
         screenOptions={{
           headerShown: false,

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "260119781011",
+    "project_id": "streaker-app-vc28",
+    "storage_bucket": "streaker-app-vc28.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:260119781011:android:158ead86f046aeb708b766",
+        "android_client_info": {
+          "package_name": "com.streaker.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcbPZwJW_zQpVhzDcOOncnQP8T63lNnxg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -11,6 +11,7 @@ export interface User {
   bio: string | null;
   coin_balance: number;
   is_public: boolean;
+  push_token: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -34,7 +35,7 @@ export type StreakType = 'solo' | 'group';
 
 export interface Streak {
   id: string;
-  creator_id: string;
+  created_by: string;
   name: string;
   emoji: string;
   description: string | null;

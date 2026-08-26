@@ -13,6 +13,7 @@
     },
     "android": {
       "package": "com.streaker.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#0F0F1A"

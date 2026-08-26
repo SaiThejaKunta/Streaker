@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Switch, Alert, ActivityIndicator } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageToSupabase } from '../../../lib/supabase';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useStreakStore } from '../../../store/useStreakStore';
 import {
@@ -25,12 +25,20 @@ import { formatDateDisplay, formatCoins, getRelativeTime, formatNumber } from '.
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, updateProfile } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const updateProfile = useAuthStore((s) => s.updateProfile);
+  const refreshUser = useAuthStore((s) => s.refreshUser);
   const { getMyStreaks } = useStreakStore();
   const [viewMode, setViewMode] = useState<'public' | 'private'>('public');
   const [isUploading, setIsUploading] = useState(false);
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const myStreaks = getMyStreaks();
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshUser();
+    }, [])
+  );
   
   const pickProfilePicture = async () => {
     if (!user) return;

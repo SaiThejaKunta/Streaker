@@ -317,7 +317,7 @@ function FeedTab({ activities, setActivities, highlightId }: { activities: any[]
           <Card key={activity.id} className={`mb-3 ${isHighlighted ? 'border-orange-500 border-2' : ''}`}>
             <View className="flex-row items-start">
               <Avatar
-                uri={user.id === currentUser?.id ? currentUser.avatar_url : user.avatar_url}
+                uri={user.id === currentUser?.id ? currentUser?.avatar_url : user.avatar_url}
                 name={user.display_name}
                 size="sm"
                 className="mr-3 mt-0.5"

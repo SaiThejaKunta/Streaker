@@ -329,6 +329,7 @@ CREATE POLICY "Invitees can update invitations" ON public.invitations FOR UPDATE
 -- (upsert: true client-side), and RETURNING silently drops the row (which
 -- the Storage API then reports as an RLS/auth failure) without one, even
 -- though the row was actually written.
+INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true) ON CONFLICT (id) DO NOTHING;
 CREATE POLICY "Avatar images are publicly accessible" ON storage.objects FOR SELECT USING (bucket_id = 'avatars');
 CREATE POLICY "Users can upload their own avatar" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'avatars' AND auth.uid()::text = name);
 CREATE POLICY "Users can update their own avatar" ON storage.objects FOR UPDATE USING (bucket_id = 'avatars' AND auth.uid()::text = name);

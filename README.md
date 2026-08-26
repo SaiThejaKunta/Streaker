@@ -54,8 +54,10 @@ npm install
 ### 3. Setup Supabase
 
 1. Create a new project in your Supabase dashboard.
-2. Go to the **SQL Editor** in Supabase and run [`supabase/schema.sql`](supabase/schema.sql) to set up the tables, functions, triggers, and Row Level Security policies.
+2. Go to the **SQL Editor** in Supabase and run [`supabase/schema.sql`](supabase/schema.sql) to set up the tables, functions, triggers, Row Level Security policies, and the `avatars` storage bucket.
 3. Go to **Project Settings -> API** to get your API URL and `anon` public key.
+
+This is enough to run the app and work on most screens/features. If you're working on push notifications or the missed-day coin redistribution, see [Additional Setup](#-additional-setup-notifications--redistribution) below - those need a few things `schema.sql` can't set up on its own.
 
 ### 4. Configure Environment Variables
 
@@ -73,6 +75,44 @@ npx expo start
 ```
 
 Press `a` to open in Android Emulator, `i` to open in iOS Simulator, or scan the QR code with the Expo Go app on your physical device.
+
+---
+
+## 🔔 Additional Setup: Notifications & Redistribution
+
+Only needed if you're working on push notifications (check-in verification requests, streak invitations) or the missed-day coin redistribution feature. Skip this if you're just working on other screens/features.
+
+### Edge Functions
+
+These live in `supabase/functions/` and don't deploy themselves - `schema.sql` only covers plain SQL, not function code:
+
+```bash
+npx supabase login
+npx supabase link --project-ref <your-project-ref>
+npx supabase functions deploy redistribute-missed-days
+npx supabase functions deploy notify-verification-request
+npx supabase functions deploy notify-invitation
+```
+
+### Database Webhooks (for push notifications)
+
+In the Supabase Dashboard, go to **Database -> Webhooks** and create two webhooks, both type "Supabase Edge Functions":
+- Table `activities`, event **Insert** -> function `notify-verification-request`
+- Table `invitations`, event **Insert** -> function `notify-invitation`
+
+### Cron Job (for coin redistribution)
+
+In the Dashboard, go to **Integrations -> Cron** (installs the `pg_net` extension if you haven't already) and create a job:
+- Schedule: `0 0 * * *` (daily, UTC midnight)
+- Type: **Supabase Edge Functions** -> `redistribute-missed-days`
+
+### Push Notification Credentials (Android)
+
+Push tokens will fail silently without these - the app will still run, but `getExpoPushTokenAsync()` throws:
+
+1. In [Firebase Console](https://console.firebase.google.com/) -> Project Settings -> Service Accounts, generate a private key and upload it under your [Expo project's Android credentials](https://expo.dev/) as the "FCM V1 service account key".
+2. Download `google-services.json` from Firebase Console -> Project Settings -> General -> your Android app, place it at the project root, and it'll be picked up via `app.json`'s `android.googleServicesFile`.
+3. This step requires a real native build (`eas build`) to take effect - it can't ship via `eas update`/OTA.
 
 ---
 

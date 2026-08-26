@@ -73,17 +73,25 @@ export default function ExploreScreen() {
         channel = supabase.channel(`explore_feed_${Date.now()}`)
           .on(
             'postgres_changes',
-            { event: 'INSERT', schema: 'public', table: 'activities' },
+            { event: '*', schema: 'public', table: 'activities' },
             async (payload) => {
-              // Fetch user details for the new activity
-              const { data: userData } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('id', payload.new.user_id)
-                .single();
-              
-              const newActivity = { ...payload.new, user: userData };
-              setActivities((prev) => [newActivity, ...prev]);
+              if (payload.eventType === 'INSERT') {
+                // Fetch user details for the new activity
+                const { data: userData } = await supabase
+                  .from('profiles')
+                  .select('*')
+                  .eq('id', payload.new.user_id)
+                  .single();
+                
+                const newActivity = { ...payload.new, user: userData };
+                setActivities((prev) => [newActivity, ...prev]);
+              } else if (payload.eventType === 'UPDATE') {
+                setActivities((prev) => prev.map(a => 
+                  a.id === payload.new.id 
+                    ? { ...a, ...payload.new }
+                    : a
+                ));
+              }
             }
           )
           .subscribe();
@@ -174,7 +182,7 @@ function LeaderboardTab({ data, currentUser }: { data: LeaderboardEntry[], curre
               >
                 <Text className="text-2xl mb-1">{medals[i]}</Text>
                 <Avatar
-                  uri={entry.user.avatar_url}
+                  uri={entry.user.id === currentUser?.id ? currentUser.avatar_url : entry.user.avatar_url}
                   name={entry.user.display_name}
                   size={isFirst ? 'lg' : 'md'}
                 />
@@ -205,7 +213,7 @@ function LeaderboardRow({ entry, currentUser }: { entry: LeaderboardEntry, curre
           #{entry.rank}
         </Text>
         <Avatar
-          uri={entry.user.avatar_url}
+          uri={isCurrentUser ? currentUser?.avatar_url : entry.user.avatar_url}
           name={entry.user.display_name}
           size="sm"
           className="mr-3"
@@ -303,7 +311,7 @@ function FeedTab({ activities, setActivities }: { activities: any[], setActiviti
           <Card key={activity.id} className="mb-3">
             <View className="flex-row items-start">
               <Avatar
-                uri={user.avatar_url}
+                uri={user.id === currentUser?.id ? currentUser.avatar_url : user.avatar_url}
                 name={user.display_name}
                 size="sm"
                 className="mr-3 mt-0.5"

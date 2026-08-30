@@ -154,61 +154,17 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
 
   verifyCheckIn: async (activityId: string, approve: boolean) => {
     try {
-      const user = useAuthStore.getState().user;
-      if (!user) throw new Error('Not authenticated');
-
-      // 1. Get the activity
-      const { data: activity, error: actErr } = await supabase
-        .from('activities')
-        .select('*, streak:streaks(*)')
-        .eq('id', activityId)
-        .single();
-        
-      if (actErr || !activity) throw actErr || new Error('Activity not found');
-      
-      const checkInId = activity.data?.check_in_id;
-      const originalUserId = activity.user_id; 
-      const streakId = activity.streak_id;
-      
-      if (!checkInId) throw new Error('Check-in ID missing');
-
-      if (approve) {
-        await supabase.from('check_ins').update({ status: 'verified' }).eq('id', checkInId);
-        
-        const { data: member } = await supabase
-          .from('streak_members')
-          .select('*')
-          .eq('streak_id', streakId)
-          .eq('user_id', originalUserId)
-          .single();
-          
-        if (member) {
-          const newCount = member.current_count + 1;
-          const coins = 10; 
-          
-          await supabase.from('streak_members').update({
-            current_count: newCount,
-            longest_count: Math.max(member.longest_count || 0, newCount)
-          }).eq('id', member.id);
-          
-          const { data: profile } = await supabase.from('profiles').select('coin_balance').eq('id', originalUserId).single();
-          if (profile) {
-            await supabase.from('profiles').update({ coin_balance: profile.coin_balance + coins }).eq('id', originalUserId);
-          }
-          
-          await supabase.from('activities').insert({
-            user_id: originalUserId,
-            streak_id: streakId,
-            type: 'check_in',
-            data: { note: activity.data?.note, coins: coins, verified_by: user.id }
-          });
-        }
-      } else {
-        await supabase.from('check_ins').update({ status: 'rejected' }).eq('id', checkInId);
-      }
-      
-      await supabase.from('activities').update({ data: { ...activity.data, completed: true, result: approve ? 'approved' : 'rejected' } }).eq('id', activityId);
-      
+      // All the actual writes (check_ins status, streak_members count,
+      // profiles coin_balance, the resulting check_in activity) happen
+      // atomically in verify_check_in, which also enforces that the caller
+      // is an active member of the streak - streak_members/profiles both
+      // have wide-open UPDATE policies (needed for cross-member writes like
+      // this), so that membership check has to live here, not in RLS.
+      const { error } = await supabase.rpc('verify_check_in', {
+        p_activity_id: activityId,
+        p_approve: approve,
+      });
+      if (error) throw error;
     } catch (err) {
       console.error("verifyCheckIn err:", err);
       throw err;

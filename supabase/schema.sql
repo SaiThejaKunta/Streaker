@@ -168,6 +168,101 @@ BEGIN
 END;
 $$;
 
+-- Approves or rejects a group check-in's verification_request. Replaces
+-- what used to be several separate client-side writes (useActivityStore's
+-- verifyCheckIn) with none of the authorization check that implies -
+-- streak_members and profiles both have wide-open `UPDATE USING (true)`
+-- policies (needed elsewhere for cross-member writes like this one), so
+-- nothing previously stopped ANY authenticated user from calling those
+-- update paths directly for a streak/activity they have no part in, e.g.
+-- to forge coins/streak-count for themselves. SECURITY DEFINER here is
+-- paired with an explicit membership check, unlike redistribute_missed_day_
+-- coins, so it's safe to leave callable by any authenticated user (like
+-- delete_streak) - the check IS the security boundary.
+CREATE OR REPLACE FUNCTION public.verify_check_in(p_activity_id uuid, p_approve boolean)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_daily_reward CONSTANT integer := 10; -- mirrors COINS.DAILY_REWARD_BASE in utils/constants.ts
+  v_streak_id uuid;
+  v_checked_in_user_id uuid;
+  v_check_in_id uuid;
+  v_note text;
+  v_activity_data jsonb;
+  v_member RECORD;
+  v_new_count integer;
+BEGIN
+  SELECT streak_id, user_id, data
+  INTO v_streak_id, v_checked_in_user_id, v_activity_data
+  FROM public.activities
+  WHERE id = p_activity_id AND type = 'verification_request';
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Verification request not found.';
+  END IF;
+
+  IF (v_activity_data->>'completed')::boolean IS TRUE THEN
+    RAISE EXCEPTION 'This check-in has already been verified.';
+  END IF;
+
+  v_check_in_id := (v_activity_data->>'check_in_id')::uuid;
+  v_note := v_activity_data->>'note';
+
+  IF v_check_in_id IS NULL THEN
+    RAISE EXCEPTION 'Check-in reference missing.';
+  END IF;
+
+  IF auth.uid() = v_checked_in_user_id THEN
+    RAISE EXCEPTION 'You cannot verify your own check-in.';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.streak_members
+    WHERE streak_id = v_streak_id AND user_id = auth.uid() AND status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'Only active members of this streak can verify check-ins.';
+  END IF;
+
+  IF p_approve THEN
+    UPDATE public.check_ins SET status = 'verified' WHERE id = v_check_in_id;
+
+    SELECT * INTO v_member
+    FROM public.streak_members
+    WHERE streak_id = v_streak_id AND user_id = v_checked_in_user_id;
+
+    IF FOUND THEN
+      v_new_count := v_member.current_count + 1;
+
+      UPDATE public.streak_members
+      SET current_count = v_new_count,
+          longest_count = GREATEST(v_member.longest_count, v_new_count)
+      WHERE id = v_member.id;
+
+      UPDATE public.profiles
+      SET coin_balance = coin_balance + v_daily_reward
+      WHERE id = v_checked_in_user_id;
+
+      INSERT INTO public.activities (user_id, streak_id, type, data)
+      VALUES (
+        v_checked_in_user_id, v_streak_id, 'check_in',
+        jsonb_build_object('note', v_note, 'coins', v_daily_reward, 'verified_by', auth.uid())
+      );
+    END IF;
+  ELSE
+    UPDATE public.check_ins SET status = 'rejected' WHERE id = v_check_in_id;
+  END IF;
+
+  UPDATE public.activities
+  SET data = v_activity_data || jsonb_build_object(
+    'completed', true,
+    'result', CASE WHEN p_approve THEN 'approved' ELSE 'rejected' END
+  )
+  WHERE id = p_activity_id;
+END;
+$$;
+
 -- Redistributes a missed group-streak member's day-10-coin reward equally
 -- among the active members who DID check in that day (any check_ins row for
 -- streak/user/day counts as "done", regardless of verified/rejected status -

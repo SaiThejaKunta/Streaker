@@ -45,6 +45,8 @@ function usePushNotifications(isAuthenticated: boolean, isHydrated: boolean) {
       if (!data) return;
       if (data.type === 'invitation') {
         router.push({ pathname: '/(tabs)/activity', params: { tab: 'invites' } });
+      } else if (data.type === 'invitation_accepted') {
+        router.push(`/streak/${data.streakId}` as any);
       } else {
         router.push({ pathname: '/(tabs)/explore', params: { tab: 'feed', activityId: data.activityId as string } });
       }

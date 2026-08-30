@@ -25,6 +25,7 @@ import type { LeaderboardEntry, Activity, User } from '../../../types';
 import { supabase } from '../../../lib/supabase';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useActivityStore } from '../../../store/useActivityStore';
+import { useStreakStore } from '../../../store/useStreakStore';
 
 type Tab = 'leaderboard' | 'feed' | 'discover';
 
@@ -37,82 +38,102 @@ export default function ExploreScreen() {
   const [activities, setActivities] = useState<any[]>([]);
   const [discoverUsers, setDiscoverUsers] = useState<User[]>([]);
   const currentUser = useAuthStore((s) => s.user);
+  const myStreaks = useStreakStore((s) => s.streaks);
 
   useEffect(() => {
-    fetchData();
-  }, [activeTab]);
-
-  const fetchData = async () => {
+    // Feed is scoped to streaks the current user is actually a member of -
+    // "Activities are viewable by everyone." at the RLS level makes the raw
+    // table globally readable, but the Feed itself shouldn't show check-in
+    // verification requests, joins, etc. for streaks the viewer has nothing
+    // to do with.
+    const myStreakIds = myStreaks.map((s) => s.id);
     let channel: any;
+    let cancelled = false;
 
-    try {
-      if (activeTab === 'leaderboard') {
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .order('coin_balance', { ascending: false })
-          .limit(50);
-        
-        if (data) {
-          const lb = data.map((u, i) => ({
-            rank: i + 1,
-            user: u as User,
-            streak_count: 0, // Would need aggregate query for real counts
-            completion_rate: 100,
-            coins_earned: u.coin_balance
-          }));
-          setLeaderboard(lb);
-        }
-      } else if (activeTab === 'feed') {
-        const { data } = await supabase
-          .from('activities')
-          .select('*, user:profiles(*)')
-          .order('created_at', { ascending: false })
-          .limit(50);
-        if (data) setActivities(data);
+    const run = async () => {
+      try {
+        if (activeTab === 'leaderboard') {
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .order('coin_balance', { ascending: false })
+            .limit(50);
 
-        // Realtime Subscription
-        channel = supabase.channel(`explore_feed_${Date.now()}`)
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'activities' },
-            async (payload) => {
-              if (payload.eventType === 'INSERT') {
-                // Fetch user details for the new activity
-                const { data: userData } = await supabase
-                  .from('profiles')
-                  .select('*')
-                  .eq('id', payload.new.user_id)
-                  .single();
-                
-                const newActivity = { ...payload.new, user: userData };
-                setActivities((prev) => [newActivity, ...prev]);
-              } else if (payload.eventType === 'UPDATE') {
-                setActivities((prev) => prev.map(a => 
-                  a.id === payload.new.id 
-                    ? { ...a, ...payload.new }
-                    : a
-                ));
+          if (data && !cancelled) {
+            const lb = data.map((u, i) => ({
+              rank: i + 1,
+              user: u as User,
+              streak_count: 0, // Would need aggregate query for real counts
+              completion_rate: 100,
+              coins_earned: u.coin_balance
+            }));
+            setLeaderboard(lb);
+          }
+        } else if (activeTab === 'feed') {
+          if (myStreakIds.length === 0) {
+            setActivities([]);
+            return;
+          }
+
+          const { data } = await supabase
+            .from('activities')
+            .select('*, user:profiles(*)')
+            .in('streak_id', myStreakIds)
+            .order('created_at', { ascending: false })
+            .limit(50);
+          if (data && !cancelled) setActivities(data);
+
+          const myStreakIdSet = new Set(myStreakIds);
+
+          // Realtime Subscription
+          channel = supabase.channel(`explore_feed_${Date.now()}`)
+            .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'activities' },
+              async (payload) => {
+                const streakId = (payload.new as any)?.streak_id;
+                if (!streakId || !myStreakIdSet.has(streakId)) return;
+
+                if (payload.eventType === 'INSERT') {
+                  // Fetch user details for the new activity
+                  const { data: userData } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', payload.new.user_id)
+                    .single();
+
+                  const newActivity = { ...payload.new, user: userData };
+                  setActivities((prev) => [newActivity, ...prev]);
+                } else if (payload.eventType === 'UPDATE') {
+                  setActivities((prev) => prev.map(a =>
+                    a.id === payload.new.id
+                      ? { ...a, ...payload.new }
+                      : a
+                  ));
+                }
               }
-            }
-          )
-          .subscribe();
-      } else if (activeTab === 'discover') {
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .neq('id', currentUser?.id || '')
-          .limit(20);
-        if (data) setDiscoverUsers(data as User[]);
+            )
+            .subscribe();
+        } else if (activeTab === 'discover') {
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .neq('id', currentUser?.id || '')
+            .limit(20);
+          if (data && !cancelled) setDiscoverUsers(data as User[]);
+        }
+      } catch (e) {
+        console.error(e);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    };
+
+    run();
 
     return () => {
+      cancelled = true;
       if (channel) supabase.removeChannel(channel);
     };
-  };
+  }, [activeTab, myStreaks]);
 
   return (
     <View className="flex-1 bg-[#0F0F1A]">

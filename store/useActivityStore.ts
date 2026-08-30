@@ -29,9 +29,19 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
   loadActivities: async () => {
     set({ isLoading: true });
     try {
+      // Scoped to streaks the current user is actually a member of - the
+      // raw table is globally readable at the RLS level, but the feed
+      // itself shouldn't surface activity for streaks the viewer isn't in.
+      const myStreakIds = useStreakStore.getState().streaks.map((s) => s.id);
+      if (myStreakIds.length === 0) {
+        set({ activities: [], isLoading: false });
+        return;
+      }
+
       const { data, error } = await supabase
         .from('activities')
         .select('*, user:profiles!activities_user_id_fkey(*)')
+        .in('streak_id', myStreakIds)
         .order('created_at', { ascending: false })
         .limit(30);
 

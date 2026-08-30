@@ -49,6 +49,7 @@ CREATE TABLE public.streak_members (
   role text DEFAULT 'member'::text,
   current_count integer NOT NULL DEFAULT 0,
   longest_count integer NOT NULL DEFAULT 0,
+  coins_earned integer NOT NULL DEFAULT 0,
   status text DEFAULT 'active'::text,
   joined_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   CONSTRAINT streak_members_pkey PRIMARY KEY (id),
@@ -237,7 +238,8 @@ BEGIN
 
       UPDATE public.streak_members
       SET current_count = v_new_count,
-          longest_count = GREATEST(v_member.longest_count, v_new_count)
+          longest_count = GREATEST(v_member.longest_count, v_new_count),
+          coins_earned = v_member.coins_earned + v_daily_reward
       WHERE id = v_member.id;
 
       UPDATE public.profiles
@@ -339,6 +341,18 @@ BEGIN
             AND ci.created_at >= v_day_start AND ci.created_at < v_day_end
         )
     );
+
+    -- Mirror the same share onto the per-streak counter, so the in-streak
+    -- leaderboard credits redistributed coins too - they were earned in this
+    -- streak just as much as a daily check-in reward.
+    UPDATE public.streak_members sm
+    SET coins_earned = sm.coins_earned + v_share
+    WHERE sm.streak_id = p_streak_id AND sm.status = 'active' AND sm.joined_at < v_day_end
+      AND EXISTS (
+        SELECT 1 FROM public.check_ins ci
+        WHERE ci.streak_id = p_streak_id AND ci.user_id = sm.user_id
+          AND ci.created_at >= v_day_start AND ci.created_at < v_day_end
+      );
   END IF;
 
   INSERT INTO public.redistribution_log (streak_id, target_date, missed_count, recipient_count, share_per_recipient)

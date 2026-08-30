@@ -108,7 +108,7 @@ export const useStreakStore = create<StreakState>((set, get) => ({
           streak_id: m.streak_id,
           user_id: m.user_id,
           coins_invested: 0,
-          coins_earned: 0,
+          coins_earned: m.coins_earned ?? 0,
           current_streak_count: m.current_count,
           longest_count: m.longest_count || 0,
           is_active: m.status === 'active',
@@ -388,7 +388,8 @@ export const useStreakStore = create<StreakState>((set, get) => ({
           .from('streak_members')
           .update({
             current_count: newStreakCount,
-            longest_count: Math.max(member.longest_count || 0, newStreakCount)
+            longest_count: Math.max(member.longest_count || 0, newStreakCount),
+            coins_earned: (member.coins_earned || 0) + coinsEarned
           })
           .eq('id', member.id);
         

@@ -143,13 +143,22 @@ export default function ActivityScreen() {
               pendingInvites.map((inv) => {
                 const inviter = (inv as any).inviter;
                 const streak = (inv as any).streak;
+                const creator = streak?.creator;
+                // Any member can send an invite, so the sender is not necessarily
+                // the owner - name whichever one applies instead of leaving it vague.
+                const inviterIsCreator = Boolean(creator && inviter && creator.id === inviter.id);
                 return (
                   <Card key={inv.id} className="mb-3">
                     <View className="flex-row items-center mb-3">
                       <Avatar uri={inviter?.avatar_url} name={inviter?.display_name || '?'} size="sm" className="mr-3" />
                       <View className="flex-1">
-                        <Text className="text-white font-semibold">{inviter?.display_name}</Text>
-                        <Text className="text-gray-400 text-xs">invited you to join</Text>
+                        <View className="flex-row items-center gap-1.5">
+                          <Text className="text-white font-semibold">{inviter?.display_name}</Text>
+                          {inviterIsCreator && <Text className="text-xs">👑</Text>}
+                        </View>
+                        <Text className="text-gray-400 text-xs">
+                          {inviterIsCreator ? 'created this streak and invited you' : 'invited you to join'}
+                        </Text>
                       </View>
                     </View>
                     <View className="bg-[#252542] rounded-xl p-3 mb-3">
@@ -160,6 +169,11 @@ export default function ActivityScreen() {
                       <Text className="text-gray-400 text-xs mt-1">
                         {streak?.target_days} days · {streak?.coin_buy_in} 🪙 buy-in
                       </Text>
+                      {creator && !inviterIsCreator ? (
+                        <Text className="text-gray-400 text-xs mt-1">
+                          👑 Created by {creator.display_name}
+                        </Text>
+                      ) : null}
                     </View>
                     <View className="flex-row gap-3">
                       <Button title="Decline" variant="outline" onPress={() => declineInvitation(inv.id)} className="flex-1" size="sm" />

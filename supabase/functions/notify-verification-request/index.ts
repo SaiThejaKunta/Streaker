@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
 
     const [{ data: checkerIn }, { data: streak }, { data: recipients }] = await Promise.all([
       supabase.from('profiles').select('display_name').eq('id', record.user_id).single(),
-      supabase.from('streaks').select('name').eq('id', record.streak_id).single(),
+      supabase.from('streaks').select('name, emoji').eq('id', record.streak_id).single(),
       supabase
         .from('streak_members')
         .select('profiles(push_token)')
@@ -73,12 +73,27 @@ Deno.serve(async (req) => {
 
     const checkerInName = checkerIn?.display_name || 'Someone';
     const streakName = streak?.name || 'a streak';
+    const streakEmoji = streak?.emoji ? `${streak.emoji} ` : '';
+
+    // The note is the only thing that tells a verifier WHAT they are approving,
+    // so it goes in the body when there is one. Trimmed short because both iOS
+    // and Android cut a collapsed notification off after a line or two anyway.
+    const rawNote = (record.data?.note || '').trim();
+    const note = rawNote.length > 80 ? `${rawNote.slice(0, 79)}…` : rawNote;
 
     const messages = tokens.map((token) => ({
       to: token,
       sound: 'default',
-      title: 'Check-in needs verification',
-      body: `${checkerInName} checked in on "${streakName}" - tap to verify`,
+      // Streak name as the title: a member of several group streaks could not
+      // tell which one a "Check-in needs verification" notification was about
+      // without opening the app.
+      title: `${streakEmoji}${streakName}`,
+      // Action first, note last: the note is the part that gets cut off in a
+      // collapsed notification, and losing "approve or reject" would leave the
+      // recipient with no idea anything is waiting on them.
+      body: note
+        ? `Approve or reject ${checkerInName}'s check-in: "${note}"`
+        : `Approve or reject ${checkerInName}'s check-in`,
       data: { type: 'verification_request', activityId: record.id, streakId: record.streak_id },
     }));
 

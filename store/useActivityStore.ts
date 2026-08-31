@@ -40,7 +40,7 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
 
       const { data, error } = await supabase
         .from('activities')
-        .select('*, user:profiles!activities_user_id_fkey(*)')
+        .select('*, user:profiles!activities_user_id_fkey(*), streak:streaks(*)')
         .in('streak_id', myStreakIds)
         .order('created_at', { ascending: false })
         .limit(30);

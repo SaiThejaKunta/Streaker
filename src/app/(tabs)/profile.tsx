@@ -20,19 +20,45 @@ import {
   Button,
   Modal,
 } from '../../../components/ui';
-import { ACHIEVEMENTS, COLORS } from '../../../utils/constants';
-import { formatDateDisplay, formatCoins, getRelativeTime, formatNumber } from '../../../utils/helpers';
+import { ACHIEVEMENTS, APP_CONFIG, COLORS } from '../../../utils/constants';
+import {
+  formatDateDisplay,
+  formatCoins,
+  getRelativeTime,
+  formatNumber,
+  buildHeatmapDays,
+  getToday,
+} from '../../../utils/helpers';
+
+// Heatmap cell colour per number of streaks checked into that day:
+// index 0 = none, index 3 = three or more. Order matches the Less → More legend.
+const HEATMAP_TIERS = [
+  'bg-[#252542]',
+  'bg-green-700/40',
+  'bg-green-600/60',
+  'bg-green-500',
+] as const;
 
 export default function ProfileScreen() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const updateProfile = useAuthStore((s) => s.updateProfile);
   const refreshUser = useAuthStore((s) => s.refreshUser);
-  const { getMyStreaks } = useStreakStore();
+  const { getMyStreaks, checkIns } = useStreakStore();
   const [viewMode, setViewMode] = useState<'public' | 'private'>('public');
   const [isUploading, setIsUploading] = useState(false);
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const myStreaks = getMyStreaks();
+  const today = getToday();
+  // Window is capped by how far back useStreakStore actually loads check-ins,
+  // so every cell is backed by real data rather than a gap that reads as "missed".
+  const heatmapDays = React.useMemo(
+    () =>
+      user
+        ? buildHeatmapDays(checkIns, user.id, APP_CONFIG.CHECK_IN_HISTORY_DAYS, today)
+        : [],
+    [checkIns, user?.id, today]
+  );
 
   useFocusEffect(
     React.useCallback(() => {
@@ -248,31 +274,19 @@ export default function ProfileScreen() {
           </ScrollView>
         </View>
 
-        {/* Streak Heatmap (simplified) */}
+        {/* Streak Heatmap */}
         <View className="px-5 mt-5">
           <SectionHeader title="🟩 Streak Heatmap" />
           <Card>
             <View className="flex-row flex-wrap gap-1.5">
-              {Array.from({ length: 52 * 7 }, (_, i) => {
-                // Simulated heatmap: random intensity
-                const rand = Math.random();
-                const intensity =
-                  rand > 0.7
-                    ? 'bg-green-500'
-                    : rand > 0.5
-                    ? 'bg-green-600/60'
-                    : rand > 0.3
-                    ? 'bg-green-700/40'
-                    : 'bg-[#252542]';
-                // Only show last 90 days for mobile
-                if (i >= 90) return null;
-                return (
-                  <View
-                    key={i}
-                    className={`w-2.5 h-2.5 rounded-sm ${intensity}`}
-                  />
-                );
-              })}
+              {heatmapDays.map(({ date, count }) => (
+                <View
+                  key={date}
+                  className={`w-2.5 h-2.5 rounded-sm ${
+                    HEATMAP_TIERS[Math.min(count, HEATMAP_TIERS.length - 1)]
+                  }`}
+                />
+              ))}
             </View>
             <View className="flex-row items-center justify-end mt-3 gap-1">
               <Text className="text-gray-500 text-xs mr-1">Less</Text>

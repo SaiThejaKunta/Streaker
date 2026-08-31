@@ -174,6 +174,10 @@ export const APP_CONFIG = {
   MIN_STREAK_DAYS: 3,
   MAX_FREEZES_PER_MONTH: 2,
   MAX_GROUP_SIZE: 20,
+  // How many days of check-in history useStreakStore loads. Anything that
+  // renders per-day history (e.g. the profile heatmap) must stay inside this
+  // window, otherwise older days show up as empty instead of as real data.
+  CHECK_IN_HISTORY_DAYS: 30,
   IMAGE_MAX_SIZE_MB: 5,
   IMAGE_QUALITY: 0.8,
 } as const;

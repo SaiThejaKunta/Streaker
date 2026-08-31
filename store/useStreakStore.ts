@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { Streak, StreakMember, CheckIn, CreateStreakForm, CalendarDay } from '../types';
 import { getToday, buildCalendarDays } from '../utils/helpers';
-import { calculateBuyIn, calculateDailyReward } from '../utils/constants';
+import { APP_CONFIG, calculateBuyIn, calculateDailyReward } from '../utils/constants';
 import { useAuthStore } from './useAuthStore';
 
 interface StreakState {
@@ -83,15 +83,15 @@ export const useStreakStore = create<StreakState>((set, get) => ({
         if (mErr) throw mErr;
         allMembersData = mData || [];
 
-        // Check-ins for those streaks (last 30 days)
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        
+        // Check-ins for those streaks (recent history only)
+        const historyStart = new Date();
+        historyStart.setDate(historyStart.getDate() - APP_CONFIG.CHECK_IN_HISTORY_DAYS);
+
         const { data: cData, error: cErr } = await supabase
           .from('check_ins')
           .select('*')
           .in('streak_id', streakIds)
-          .gte('created_at', thirtyDaysAgo.toISOString());
+          .gte('created_at', historyStart.toISOString());
         if (cErr) throw cErr;
         
         // Map created_at to check_in_date for local compat

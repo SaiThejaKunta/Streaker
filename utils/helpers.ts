@@ -3,7 +3,7 @@
 // ============================================================
 
 import { MOTIVATIONAL_QUOTES, COINS, APP_CONFIG } from './constants';
-import type { DayStatus, CalendarDay, CheckIn } from '../types';
+import type { DayStatus, CalendarDay, CheckIn, HeatmapDay } from '../types';
 
 // ---- Date Helpers ----
 
@@ -196,6 +196,44 @@ export function buildCalendarDays(
   }
 
   return days;
+}
+
+/**
+ * Build the profile streak heatmap: one entry per day for the `days`
+ * calendar days ending at `endDate`, oldest first, where `count` is how
+ * many distinct streaks `userId` checked into on that date.
+ *
+ * `pending` check-ins count, so a group check-in shows up as soon as it is
+ * made rather than only once a verifier gets to it. `rejected` ones do not -
+ * verify_check_in awards no streak day or coins for those, so colouring the
+ * day in would claim credit the user never got.
+ */
+export function buildHeatmapDays(
+  checkIns: CheckIn[],
+  userId: string,
+  days: number,
+  endDate: string = getToday()
+): HeatmapDay[] {
+  // Distinct streak ids per date, so two rows for the same streak on the
+  // same day (or a re-check-in) still only count once.
+  const streakIdsByDate = new Map<string, Set<string>>();
+  for (const checkIn of checkIns) {
+    if (checkIn.user_id !== userId) continue;
+    if (checkIn.status === 'rejected') continue;
+    const streakIds = streakIdsByDate.get(checkIn.check_in_date) ?? new Set<string>();
+    streakIds.add(checkIn.streak_id);
+    streakIdsByDate.set(checkIn.check_in_date, streakIds);
+  }
+
+  const startDate = addDays(endDate, -(days - 1));
+  const result: HeatmapDay[] = [];
+
+  for (let i = 0; i < days; i++) {
+    const date = addDays(startDate, i);
+    result.push({ date, count: streakIdsByDate.get(date)?.size ?? 0 });
+  }
+
+  return result;
 }
 
 // ---- Coin Helpers ----

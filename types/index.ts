@@ -217,6 +217,15 @@ export interface CalendarDay {
   check_in?: CheckIn;
 }
 
+/**
+ * One cell of the profile streak heatmap: how many distinct streaks the
+ * user checked into on that calendar date.
+ */
+export interface HeatmapDay {
+  date: string;
+  count: number;
+}
+
 // ---- Leaderboard ----
 export interface LeaderboardEntry {
   rank: number;

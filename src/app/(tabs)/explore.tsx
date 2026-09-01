@@ -19,8 +19,8 @@ import {
   SectionHeader,
   Divider,
 } from '../../../components/ui';
-import { STREAK_CATEGORIES, REACTION_EMOJIS } from '../../../utils/constants';
-import { getRelativeTime } from '../../../utils/helpers';
+import { STREAK_CATEGORIES, REACTION_EMOJIS, COINS } from '../../../utils/constants';
+import { getRelativeTime, formatCoins } from '../../../utils/helpers';
 import type { LeaderboardEntry, Activity, User } from '../../../types';
 import { supabase } from '../../../lib/supabase';
 import { useAuthStore } from '../../../store/useAuthStore';
@@ -77,7 +77,7 @@ export default function ExploreScreen() {
 
           const { data } = await supabase
             .from('activities')
-            .select('*, user:profiles(*)')
+            .select('*, user:profiles(*), streak:streaks(*)')
             .in('streak_id', myStreakIds)
             .order('created_at', { ascending: false })
             .limit(50);
@@ -102,7 +102,12 @@ export default function ExploreScreen() {
                     .eq('id', payload.new.user_id)
                     .single();
 
-                  const newActivity = { ...payload.new, user: userData };
+                  // Streak comes from the store rather than a second round trip -
+                  // the feed is already scoped to streaks the viewer is a member of, so
+                  // it is always present locally. Without this a verification
+                  // request arriving live would be the one card missing its name.
+                  const streak = myStreaks.find((s) => s.id === streakId);
+                  const newActivity = { ...payload.new, user: userData, streak };
                   setActivities((prev) => [newActivity, ...prev]);
                 } else if (payload.eventType === 'UPDATE') {
                   setActivities((prev) => prev.map(a =>
@@ -332,6 +337,15 @@ function FeedTab({ activities, setActivities, highlightId }: { activities: any[]
         const user = activity.user;
         if (!user) return null;
 
+        const streak = activity.streak;
+        // Which streak a check-in belongs to is the thing an approver needs and
+        // the feed never said - a member of several groups had no way to tell.
+        const streakLabel = streak?.name
+          ? `${streak.emoji ? `${streak.emoji} ` : ''}${streak.name}`
+          : '';
+        const onStreak = streakLabel ? ` on ${streakLabel}` : '';
+        const note = typeof activity.data?.note === 'string' ? activity.data.note.trim() : '';
+
         const isHighlighted = activity.id === highlightId;
 
         return (
@@ -349,19 +363,24 @@ function FeedTab({ activities, setActivities, highlightId }: { activities: any[]
                     {user.display_name}
                   </Text>
                   <Text className="text-gray-400 text-sm">
-                    {activity.type === 'check_in' && 'checked in'}
-                    {activity.type === 'verification_request' && 'needs verification'}
-                    {activity.type === 'missed' && 'missed a day'}
+                    {activity.type === 'check_in' && `checked in${onStreak}`}
+                    {activity.type === 'verification_request' && `needs verification${onStreak}`}
+                    {activity.type === 'missed' && `missed a day${onStreak}`}
                     {activity.type === 'milestone' && 'hit a milestone'}
                     {activity.type === 'streak_created' && 'created a streak'}
-                    {activity.type === 'joined' && 'joined a streak'}
+                    {activity.type === 'joined' && `joined ${streakLabel || 'a streak'}`}
                   </Text>
                 </View>
 
                 {/* Activity-specific content */}
-                {activity.type === 'check_in' && Boolean((activity.data as any)?.note) ? (
+                {/* Once a request is resolved, verify_check_in copies the note onto
+                    the resulting check_in activity - so showing it on both cards
+                    would print it twice in the feed. */}
+                {note &&
+                (activity.type === 'check_in' ||
+                  (activity.type === 'verification_request' && !activity.data?.completed)) ? (
                   <Text className="text-gray-300 text-sm mt-1">
-                    "{(activity.data as any).note}"
+                    "{note}"
                   </Text>
                 ) : null}
                 {activity.type === 'milestone' && (
@@ -380,21 +399,27 @@ function FeedTab({ activities, setActivities, highlightId }: { activities: any[]
                   </Text>
                 )}
                 {activity.type === 'verification_request' && !activity.data?.completed && activity.user_id !== currentUser?.id && (
-                  <View className="flex-row gap-2 mt-3">
-                    <TouchableOpacity
-                      className="bg-[#252542] px-3 py-1.5 rounded-lg flex-1 items-center border border-gray-600"
-                      onPress={() => handleVerify(activity.id, false)}
-                      disabled={loadingId === activity.id}
-                    >
-                      <Text className="text-gray-300 font-medium">Reject</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      className="bg-orange-500/20 px-3 py-1.5 rounded-lg flex-1 items-center border border-orange-500/50"
-                      onPress={() => handleVerify(activity.id, true)}
-                      disabled={loadingId === activity.id}
-                    >
-                      <Text className="text-orange-400 font-medium">Approve</Text>
-                    </TouchableOpacity>
+                  <View className="mt-2">
+                    <Text className="text-gray-500 text-xs">
+                      Approving gives {user.display_name} +1 day and{' '}
+                      {formatCoins(COINS.DAILY_REWARD_BASE)}. Rejecting gives nothing.
+                    </Text>
+                    <View className="flex-row gap-2 mt-2">
+                      <TouchableOpacity
+                        className="bg-[#252542] px-3 py-1.5 rounded-lg flex-1 items-center border border-gray-600"
+                        onPress={() => handleVerify(activity.id, false)}
+                        disabled={loadingId === activity.id}
+                      >
+                        <Text className="text-gray-300 font-medium">Reject</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        className="bg-orange-500/20 px-3 py-1.5 rounded-lg flex-1 items-center border border-orange-500/50"
+                        onPress={() => handleVerify(activity.id, true)}
+                        disabled={loadingId === activity.id}
+                      >
+                        <Text className="text-orange-400 font-medium">Approve</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 )}
                 {activity.type === 'verification_request' && activity.data?.completed && (

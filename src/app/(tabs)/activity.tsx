@@ -92,6 +92,8 @@ export default function ActivityScreen() {
                     case 'missed': return '❌';
                     case 'milestone': return '🏅';
                     case 'streak_created': return '🆕';
+                    case 'verification_request': return '🔍';
+                    case 'joined':
                     case 'streak_joined': return '🤝';
                     case 'streak_completed': return '🎉';
                     default: return '📌';
@@ -101,9 +103,19 @@ export default function ActivityScreen() {
                 const getActivityText = () => {
                   switch (act.type) {
                     case 'check_in': return `checked in to ${streak?.name || 'a streak'}`;
+                    case 'verification_request': {
+                      // Resolved requests stay in the feed, so the wording has to
+                      // follow data.result rather than always reading as pending.
+                      const on = streak?.name || 'a streak';
+                      const result = (act.data as any)?.result;
+                      if (result === 'approved') return `had a check-in approved on ${on}`;
+                      if (result === 'rejected') return `had a check-in rejected on ${on}`;
+                      return `needs a check-in verified on ${on}`;
+                    }
                     case 'missed': return `missed ${streak?.name || 'a streak'}`;
                     case 'milestone': return `reached ${(act.data as any)?.milestone}-day milestone!`;
                     case 'streak_created': return `created "${(act.data as any)?.streak_name}"`;
+                    case 'joined':
                     case 'streak_joined': return `joined ${streak?.name || 'a streak'}`;
                     default: return 'had activity';
                   }

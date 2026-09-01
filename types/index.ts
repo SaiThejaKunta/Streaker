@@ -129,6 +129,7 @@ export type ActivityType =
   | 'streak_created'
   | 'streak_joined'
   | 'verification_request'
+  | 'joined'
   | 'milestone'
   | 'missed'
   | 'streak_completed'

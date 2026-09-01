@@ -83,19 +83,49 @@ export const useStreakStore = create<StreakState>((set, get) => ({
         if (mErr) throw mErr;
         allMembersData = mData || [];
 
-        // Check-ins for those streaks (recent history only)
+        // Two narrower queries instead of one broad one (#39): the old single
+        // query pulled every member's full CHECK_IN_HISTORY_DAYS window, which
+        // multiplies by MAX_GROUP_SIZE and can exceed the database's per-request
+        // row cap with no error or warning - just silent truncation. Nothing
+        // actually needs a groupmate's older history: hasCheckedInToday() (used
+        // by getStreakMembers for the "already checked in" badge) only ever
+        // asks about today, and the calendar/heatmap only ever look at the
+        // CURRENT user's own history. A small "last 2 days, everyone" window
+        // (buffer for timezone skew between the device's local "today" and the
+        // UTC-derived check_in_date below) plus "last CHECK_IN_HISTORY_DAYS
+        // days, just me" covers every real consumer at a fraction of the rows.
+        const recentWindowStart = new Date();
+        recentWindowStart.setDate(recentWindowStart.getDate() - 2);
         const historyStart = new Date();
         historyStart.setDate(historyStart.getDate() - APP_CONFIG.CHECK_IN_HISTORY_DAYS);
 
-        const { data: cData, error: cErr } = await supabase
-          .from('check_ins')
-          .select('*')
-          .in('streak_id', streakIds)
-          .gte('created_at', historyStart.toISOString());
-        if (cErr) throw cErr;
-        
+        const [
+          { data: recentData, error: recentErr },
+          { data: myHistoryData, error: myHistoryErr },
+        ] = await Promise.all([
+          supabase
+            .from('check_ins')
+            .select('*')
+            .in('streak_id', streakIds)
+            .gte('created_at', recentWindowStart.toISOString())
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('check_ins')
+            .select('*')
+            .in('streak_id', streakIds)
+            .eq('user_id', user.id)
+            .gte('created_at', historyStart.toISOString())
+            .order('created_at', { ascending: false }),
+        ]);
+        if (recentErr) throw recentErr;
+        if (myHistoryErr) throw myHistoryErr;
+
+        // Dedupe - the current user's recent check-ins appear in both queries.
+        const checkInsById = new Map<string, any>();
+        [...(recentData || []), ...(myHistoryData || [])].forEach((c) => checkInsById.set(c.id, c));
+
         // Map created_at to check_in_date for local compat
-        checkInsData = (cData || []).map((c: any) => ({
+        checkInsData = Array.from(checkInsById.values()).map((c: any) => ({
           ...c,
           check_in_date: c.created_at.split('T')[0]
         }));

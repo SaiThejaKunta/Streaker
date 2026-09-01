@@ -121,14 +121,11 @@ export const useStreakStore = create<StreakState>((set, get) => ({
         if (myHistoryErr) throw myHistoryErr;
 
         // Dedupe - the current user's recent check-ins appear in both queries.
+        // check_in_date is a real column now (#38) - the row already carries
+        // the correct value, no need to re-derive it from created_at here.
         const checkInsById = new Map<string, any>();
         [...(recentData || []), ...(myHistoryData || [])].forEach((c) => checkInsById.set(c.id, c));
-
-        // Map created_at to check_in_date for local compat
-        checkInsData = Array.from(checkInsById.values()).map((c: any) => ({
-          ...c,
-          check_in_date: c.created_at.split('T')[0]
-        }));
+        checkInsData = Array.from(checkInsById.values());
       }
 
       set({
@@ -380,23 +377,34 @@ export const useStreakStore = create<StreakState>((set, get) => ({
       const initialStatus = isGroup ? 'pending' : 'verified';
 
       // 1. Insert Check-in
+      // check_in_date is the client's own local "today" (#38) - created_at is
+      // UTC and every reader (hasCheckedInToday, calendars, the heatmap)
+      // compares against the user's local day, so deriving the date from
+      // created_at anywhere (client or server) reintroduces the mismatch.
+      // The unique constraint on (streak_id, user_id, check_in_date) is the
+      // real guard against a duplicate for one local day - the
+      // hasCheckedInToday() check above is just a fast pre-check for normal
+      // UX, not something a fast double-tap could rely on alone.
       const { data: checkInData, error: checkInErr } = await supabase
         .from('check_ins')
         .insert({
           streak_id: streakId,
           user_id: user.id,
           note: note,
-          status: initialStatus
+          status: initialStatus,
+          check_in_date: getToday(),
         })
         .select()
         .single();
-      
-      if (checkInErr) throw checkInErr;
 
-      const newCheckIn: CheckIn = {
-        ...checkInData,
-        check_in_date: checkInData.created_at.split('T')[0],
-      } as CheckIn;
+      if (checkInErr) {
+        if (checkInErr.code === '23505') {
+          throw new Error('Already checked in today');
+        }
+        throw checkInErr;
+      }
+
+      const newCheckIn: CheckIn = checkInData as CheckIn;
 
       // Update local state for check-in immediately so UI reflects it
       set((state) => ({

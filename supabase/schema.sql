@@ -64,9 +64,20 @@ CREATE TABLE public.check_ins (
   note text,
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   status text DEFAULT 'verified'::text CHECK (status = ANY (ARRAY['pending'::text, 'verified'::text, 'rejected'::text])),
+  -- Client-supplied (utils/helpers.ts getToday()), not derived from created_at:
+  -- created_at is UTC, but every consumer (hasCheckedInToday, calendars, the
+  -- heatmap) compares against the user's LOCAL day. Deriving it from created_at
+  -- server-side would just move the UTC/local mismatch here instead of fixing
+  -- it (#38) - the client is the only place that actually knows the user's
+  -- local "today". The unique constraint below is what actually stops a
+  -- second check-in for one local day; the client-side hasCheckedInToday()
+  -- check alone couldn't (a fast double-tap could pass it twice, and it was
+  -- comparing against the wrong date anyway).
+  check_in_date date NOT NULL,
   CONSTRAINT check_ins_pkey PRIMARY KEY (id),
   CONSTRAINT check_ins_streak_id_fkey FOREIGN KEY (streak_id) REFERENCES public.streaks(id) ON DELETE CASCADE,
-  CONSTRAINT check_ins_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
+  CONSTRAINT check_ins_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT check_ins_streak_user_day_unique UNIQUE (streak_id, user_id, check_in_date)
 );
 
 CREATE TABLE public.activities (

@@ -4,8 +4,16 @@
 
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
-import type { Streak, StreakMember, CheckIn, CreateStreakForm, CalendarDay } from '../types';
-import { getToday, buildCalendarDays } from '../utils/helpers';
+import type {
+  Streak,
+  StreakMember,
+  CheckIn,
+  CreateStreakForm,
+  CalendarDay,
+  HeatmapCheckIn,
+  HeatmapStatus,
+} from '../types';
+import { getToday, addDays, buildCalendarDays } from '../utils/helpers';
 import { APP_CONFIG, calculateBuyIn, calculateDailyReward } from '../utils/constants';
 import { useAuthStore } from './useAuthStore';
 
@@ -13,11 +21,17 @@ interface StreakState {
   streaks: Streak[];
   streakMembers: StreakMember[];
   checkIns: CheckIn[];
+  // The year of the current user's own check-ins behind the profile heatmap.
+  // Kept apart from `checkIns` because it is a different window, a narrower
+  // row shape, and only fetched when a screen actually shows the heatmap.
+  heatmapCheckIns: HeatmapCheckIn[];
+  heatmapStatus: HeatmapStatus;
   isLoading: boolean;
   error: string | null;
 
   // Actions
   loadStreaks: () => Promise<void>;
+  loadHeatmapHistory: () => Promise<void>;
   getMyStreaks: () => Streak[];
   getStreakById: (id: string) => Streak | undefined;
   getStreakMembers: (streakId: string) => StreakMember[];
@@ -36,6 +50,8 @@ export const useStreakStore = create<StreakState>((set, get) => ({
   streaks: [],
   streakMembers: [],
   checkIns: [],
+  heatmapCheckIns: [],
+  heatmapStatus: 'idle',
   isLoading: false,
   error: null,
 
@@ -44,7 +60,14 @@ export const useStreakStore = create<StreakState>((set, get) => ({
     try {
       const { user } = useAuthStore.getState();
       if (!user) {
-        set({ streaks: [], streakMembers: [], checkIns: [], isLoading: false });
+        set({
+          streaks: [],
+          streakMembers: [],
+          checkIns: [],
+          heatmapCheckIns: [],
+          heatmapStatus: 'idle',
+          isLoading: false,
+        });
         return;
       }
 
@@ -148,6 +171,67 @@ export const useStreakStore = create<StreakState>((set, get) => ({
     } catch (err: any) {
       console.error('loadStreaks error', err);
       set({ error: err.message, isLoading: false });
+    }
+  },
+
+  /**
+   * Load the current user's own check-ins for the heatmap window.
+   *
+   * Separate from loadStreaks on purpose: it reaches back a year where
+   * loadStreaks reaches back CHECK_IN_HISTORY_DAYS, it selects four columns
+   * instead of whole rows, and it only runs when a screen shows the heatmap -
+   * so a year of squares costs nothing on app launch.
+   *
+   * Filtered by user_id alone rather than by the user's current memberships:
+   * these are their own check-ins, and a streak they have since left is still
+   * a day they showed up for. It also means this does not depend on
+   * loadStreaks having run first.
+   */
+  loadHeatmapHistory: async () => {
+    const { user } = useAuthStore.getState();
+    if (!user) {
+      set({ heatmapCheckIns: [], heatmapStatus: 'idle' });
+      return;
+    }
+
+    set({ heatmapStatus: 'loading' });
+    // check_in_date is a date column, so a YYYY-MM-DD compare is a date
+    // compare - and it is the user's local date (#38), which is what the
+    // heatmap's columns are, unlike created_at.
+    const windowStart = addDays(getToday(), -(APP_CONFIG.HEATMAP_DAYS - 1));
+    const pageSize = APP_CONFIG.HEATMAP_PAGE_SIZE;
+    const rows: HeatmapCheckIn[] = [];
+
+    try {
+      // Page until a request comes back empty, advancing by however many rows
+      // actually arrived. Treating a short page as the end would reintroduce
+      // the silent truncation from #39 whenever the server's row cap is lower
+      // than the page size we asked for.
+      for (let offset = 0, page = 0; page < 40; page++) {
+        const { data, error } = await supabase
+          .from('check_ins')
+          .select('user_id, streak_id, check_in_date, status')
+          .eq('user_id', user.id)
+          .gte('check_in_date', windowStart)
+          // A total order, so paging can't skip or repeat a row: check_in_date
+          // plus streak_id is unique for one user.
+          .order('check_in_date', { ascending: false })
+          .order('streak_id', { ascending: true })
+          .range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        rows.push(...(data as HeatmapCheckIn[]));
+        offset += data.length;
+      }
+
+      set({ heatmapCheckIns: rows, heatmapStatus: 'ready' });
+    } catch (err: any) {
+      console.error('loadHeatmapHistory error', err);
+      // Not surfaced through `error`: a failed heatmap shouldn't raise an
+      // alarm over the whole profile screen. The status lets the component say
+      // "couldn't load" instead of drawing an empty year, which would read as
+      // "you never checked in".
+      set({ heatmapStatus: 'error' });
     }
   },
 

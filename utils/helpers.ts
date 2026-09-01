@@ -3,7 +3,15 @@
 // ============================================================
 
 import { MOTIVATIONAL_QUOTES, COINS, APP_CONFIG } from './constants';
-import type { DayStatus, CalendarDay, CheckIn, HeatmapDay } from '../types';
+import type {
+  DayStatus,
+  CalendarDay,
+  CheckIn,
+  HeatmapCheckIn,
+  HeatmapDay,
+  HeatmapGrid,
+  HeatmapMonthLabel,
+} from '../types';
 
 // ---- Date Helpers ----
 
@@ -92,6 +100,20 @@ export function formatDateShort(dateStr: string): string {
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
+  });
+}
+
+/**
+ * Format a date string with its weekday: "Tue, Sep 1, 2026". Used where the
+ * weekday is part of the information, e.g. the heatmap's selected-day caption.
+ */
+export function formatDateWithWeekday(dateStr: string): string {
+  const date = parseDate(dateStr);
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
   });
 }
 
@@ -209,7 +231,7 @@ export function buildCalendarDays(
  * day in would claim credit the user never got.
  */
 export function buildHeatmapDays(
-  checkIns: CheckIn[],
+  checkIns: HeatmapCheckIn[],
   userId: string,
   days: number,
   endDate: string = getToday()
@@ -234,6 +256,65 @@ export function buildHeatmapDays(
   }
 
   return result;
+}
+
+/**
+ * Lay a run of heatmap days out the way GitHub lays out its contribution
+ * graph: one column per week, each column holding 7 cells indexed by weekday
+ * (0 = Sunday). `days` must be oldest-first and contiguous - what
+ * buildHeatmapDays returns.
+ *
+ * Cells before the first day or after the last are null rather than
+ * zero-count days, so the component can leave them blank instead of drawing
+ * them as days the user missed.
+ */
+export function buildHeatmapGrid(days: HeatmapDay[]): HeatmapGrid {
+  if (days.length === 0) return { weeks: [], months: [], total: 0 };
+
+  const byDate = new Map(days.map((day) => [day.date, day]));
+  const firstDate = days[0].date;
+  const lastDate = days[days.length - 1].date;
+  // Back up to the Sunday of the first day's week so every row is one weekday.
+  const firstSunday = addDays(firstDate, -parseDate(firstDate).getDay());
+
+  const weeks: (HeatmapDay | null)[][] = [];
+  // Lexicographic compare is date order for YYYY-MM-DD, and addDays goes
+  // through parseDate/setDate rather than millisecond arithmetic, so a DST
+  // transition inside the window can't shift a column by a day.
+  for (let sunday = firstSunday; sunday <= lastDate; sunday = addDays(sunday, 7)) {
+    const week: (HeatmapDay | null)[] = [];
+    for (let weekday = 0; weekday < 7; weekday++) {
+      week.push(byDate.get(addDays(sunday, weekday)) ?? null);
+    }
+    weeks.push(week);
+  }
+
+  const months: HeatmapMonthLabel[] = [];
+  let labelledMonth = -1;
+  for (const [weekIndex, week] of weeks.entries()) {
+    // A column belongs to the month of its earliest in-window day, so a week
+    // straddling a month boundary is labelled by the month it opens in.
+    const firstDay = week.find((cell) => cell !== null);
+    if (!firstDay) continue;
+    const date = parseDate(firstDay.date);
+    if (date.getMonth() === labelledMonth) continue;
+    labelledMonth = date.getMonth();
+    months.push({
+      label: date.toLocaleDateString('en-US', { month: 'short' }),
+      weekIndex,
+    });
+  }
+  // Only the first label can land next to its neighbour: the window can open
+  // in the last days of a month, giving it one column to itself, while a whole
+  // month always spans four or more. Drop it rather than draw two names on top
+  // of each other - the leftmost column is a partial week anyway.
+  if (months.length > 1 && months[1].weekIndex - months[0].weekIndex < 2) {
+    months.shift();
+  }
+
+  const total = days.reduce((sum, day) => sum + day.count, 0);
+
+  return { weeks, months, total };
 }
 
 // ---- Coin Helpers ----

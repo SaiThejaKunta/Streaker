@@ -56,6 +56,11 @@ export default function StreakDetailScreen() {
   const calendarDays = getCalendarDays(streak.id, userId);
   const members = getStreakMembers(streak.id);
   const checkInStatus = getTodayCheckInStatus(streak.id, userId);
+  // streaks.created_by is the authoritative owner: streak_members.role is
+  // written as 'creator' on create but dropped by the store's mapping. Resolves
+  // to undefined if the creator is no longer a member of their own streak, in
+  // which case there is no profile to show and the line is skipped.
+  const creator = members.find((m) => m.user_id === streak.created_by)?.user;
 
   // Leaderboard sorted by coins earned
   const leaderboard = [...members]
@@ -99,6 +104,22 @@ export default function StreakDetailScreen() {
                 variant={streak.status === 'active' ? 'success' : 'warning'}
               />
             </View>
+
+            {streak.is_group && creator ? (
+              <View className="flex-row items-center gap-2 mt-3">
+                <Avatar
+                  uri={creator.id === userId ? currentUser?.avatar_url : creator.avatar_url}
+                  name={creator.display_name || '?'}
+                  size="xs"
+                />
+                <Text className="text-gray-400 text-xs">
+                  Created by{' '}
+                  <Text className="text-white font-medium">
+                    {creator.id === userId ? 'you' : creator.display_name}
+                  </Text>
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -283,6 +304,9 @@ export default function StreakDetailScreen() {
                       <Text className="text-white font-semibold">
                         {member.user?.display_name}
                       </Text>
+                      {member.user_id === streak.created_by && (
+                        <Text className="text-xs">👑</Text>
+                      )}
                       {!member.is_active && (
                         <Badge label="Eliminated" variant="danger" size="sm" />
                       )}

@@ -58,15 +58,36 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       const user = useAuthStore.getState().user;
       if (!user) return;
       
-      const { data, error } = await supabase
-        .from('invitations')
-        .select('*, streak:streaks(*), inviter:profiles!invitations_inviter_id_fkey(*)')
-        .eq('invitee_id', user.id)
-        .eq('status', 'pending');
-        
-      if (error) throw error;
+      const fetchInvitations = (select: string) =>
+        supabase
+          .from('invitations')
+          .select(select)
+          .eq('invitee_id', user.id)
+          .eq('status', 'pending');
 
-      const invitations = (data || []).map((inv: any) => ({
+      // The creator embed lets an invite name who owns the streak, not just who
+      // sent it - the two are often but not always the same person.
+      let res = await fetchInvitations(
+        '*, streak:streaks(*, creator:profiles!streaks_created_by_fkey(*)), inviter:profiles!invitations_inviter_id_fkey(*)'
+      );
+
+      if (res.error) {
+        // That embed is decorative; being able to accept an invitation is not.
+        // If the relationship hint ever stops resolving (FK recreated from the
+        // dashboard, table rebuilt), retry without it rather than leaving the
+        // invitee looking at an empty Invites tab with no way through.
+        console.warn(
+          'loadInvitations: creator embed failed, retrying without it:',
+          res.error.message
+        );
+        res = await fetchInvitations(
+          '*, streak:streaks(*), inviter:profiles!invitations_inviter_id_fkey(*)'
+        );
+      }
+
+      if (res.error) throw res.error;
+
+      const invitations = (res.data || []).map((inv: any) => ({
         ...inv,
         streak: inv.streak ? { ...inv.streak, coin_buy_in: inv.streak.buy_in || 0 } : inv.streak,
       }));

@@ -203,13 +203,18 @@ DECLARE
   v_check_in_id uuid;
   v_note text;
   v_activity_data jsonb;
-  v_member RECORD;
-  v_new_count integer;
 BEGIN
+  -- FOR UPDATE is what makes the 'completed' check below an actual gate
+  -- (#18). Without the lock, two members approving at the same moment both
+  -- read completed = false, both credit the day, and the second UPDATE at
+  -- the bottom just overwrites the flag - so one check-in became +2 days
+  -- and +20 coins. Locking the row here makes the second caller wait, then
+  -- re-read the committed row and fail the check.
   SELECT streak_id, user_id, data
   INTO v_streak_id, v_checked_in_user_id, v_activity_data
   FROM public.activities
-  WHERE id = p_activity_id AND type = 'verification_request';
+  WHERE id = p_activity_id AND type = 'verification_request'
+  FOR UPDATE;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Verification request not found.';
@@ -240,19 +245,19 @@ BEGIN
   IF p_approve THEN
     UPDATE public.check_ins SET status = 'verified' WHERE id = v_check_in_id;
 
-    SELECT * INTO v_member
-    FROM public.streak_members
+    -- Counted in place rather than read into a variable and written back
+    -- (#18). Two approvals for DIFFERENT days landing at the same moment both
+    -- read current_count = 5 and both wrote 6, so a day quietly disappeared -
+    -- the same missing-lock problem as above, just with the opposite symptom.
+    -- Arithmetic inside the UPDATE reads the row Postgres has locked for this
+    -- statement, so the second approval counts from the first's result.
+    UPDATE public.streak_members
+    SET current_count = current_count + 1,
+        longest_count = GREATEST(longest_count, current_count + 1),
+        coins_earned = coins_earned + v_daily_reward
     WHERE streak_id = v_streak_id AND user_id = v_checked_in_user_id;
 
     IF FOUND THEN
-      v_new_count := v_member.current_count + 1;
-
-      UPDATE public.streak_members
-      SET current_count = v_new_count,
-          longest_count = GREATEST(v_member.longest_count, v_new_count),
-          coins_earned = v_member.coins_earned + v_daily_reward
-      WHERE id = v_member.id;
-
       UPDATE public.profiles
       SET coin_balance = coin_balance + v_daily_reward
       WHERE id = v_checked_in_user_id;

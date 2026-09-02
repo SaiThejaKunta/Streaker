@@ -227,6 +227,18 @@ export interface HeatmapDay {
   count: number;
 }
 
+// ---- Auth Deep Links ----
+
+/**
+ * The password-recovery payload carried by a deep link Supabase opened the
+ * app with. Which shape arrives depends on the client's auth flowType.
+ */
+export type RecoveryLink =
+  | { kind: 'session'; accessToken: string; refreshToken: string }
+  | { kind: 'code'; code: string }
+  | { kind: 'token_hash'; tokenHash: string }
+  | { kind: 'error'; message: string };
+
 /**
  * The only fields the heatmap needs from a check-in row. The year-long
  * heatmap query selects exactly these - a year of full rows is a lot of
@@ -258,6 +270,7 @@ export interface HeatmapGrid {
   months: HeatmapMonthLabel[];
   total: number;
 }
+
 
 // ---- Leaderboard ----
 export interface LeaderboardEntry {

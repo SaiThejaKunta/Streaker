@@ -11,6 +11,7 @@ import type {
   HeatmapDay,
   HeatmapGrid,
   HeatmapMonthLabel,
+  RecoveryLink,
 } from '../types';
 
 // ---- Date Helpers ----
@@ -256,6 +257,77 @@ export function buildHeatmapDays(
   }
 
   return result;
+}
+
+// ---- Auth Link Helpers ----
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    // A malformed escape shouldn't take the whole reset flow down with it.
+    return value;
+  }
+}
+
+function parseUrlParams(segment: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  for (const pair of segment.split('&')) {
+    if (!pair) continue;
+    const eq = pair.indexOf('=');
+    const rawKey = eq === -1 ? pair : pair.slice(0, eq);
+    const rawValue = eq === -1 ? '' : pair.slice(eq + 1);
+    if (!rawKey) continue;
+    // '+' means space in a form-encoded value; decodeURIComponent leaves it as-is.
+    params[safeDecode(rawKey)] = safeDecode(rawValue.replace(/\+/g, ' '));
+  }
+  return params;
+}
+
+/**
+ * Pull the password-recovery payload out of the deep link Supabase opened the
+ * app with. The token's shape depends on the client's auth flowType and can
+ * arrive in either the query string or the URL fragment, so every shape is
+ * handled rather than betting on one. Note that expo-router only surfaces
+ * query params, never the fragment, which is why this takes the whole URL.
+ *
+ * Returns null for anything that isn't a recovery link - including a
+ * confirmation link for a different auth flow, which must not land the user
+ * on a "choose a new password" screen.
+ */
+export function parseRecoveryLink(url: string | null | undefined): RecoveryLink | null {
+  if (!url) return null;
+
+  const hashIndex = url.indexOf('#');
+  const fragment = hashIndex === -1 ? '' : url.slice(hashIndex + 1);
+  const beforeFragment = hashIndex === -1 ? url : url.slice(0, hashIndex);
+  const queryIndex = beforeFragment.indexOf('?');
+  const query = queryIndex === -1 ? '' : beforeFragment.slice(queryIndex + 1);
+
+  // Fragment last so it wins: that's where implicit-flow tokens live.
+  const params = { ...parseUrlParams(query), ...parseUrlParams(fragment) };
+
+  if (params.error || params.error_description) {
+    return {
+      kind: 'error',
+      message:
+        params.error_description || params.error || 'This reset link is no longer valid.',
+    };
+  }
+
+  if (params.type && params.type !== 'recovery') return null;
+
+  if (params.access_token && params.refresh_token) {
+    return {
+      kind: 'session',
+      accessToken: params.access_token,
+      refreshToken: params.refresh_token,
+    };
+  }
+  if (params.code) return { kind: 'code', code: params.code };
+  if (params.token_hash) return { kind: 'token_hash', tokenHash: params.token_hash };
+
+  return null;
 }
 
 /**

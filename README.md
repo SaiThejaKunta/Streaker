@@ -78,9 +78,27 @@ Press `a` to open in Android Emulator, `i` to open in iOS Simulator, or scan the
 
 ---
 
-## 🔔 Additional Setup: Notifications & Redistribution
+## 🔔 Additional Setup: Auth Links, Notifications & Redistribution
 
-Only needed if you're working on push notifications (check-in verification requests, streak invitations) or the missed-day coin redistribution feature. Skip this if you're just working on other screens/features.
+Needed if you're working on password reset, push notifications (check-in verification requests, streak invitations), or the missed-day coin redistribution feature. Skip this if you're just working on other screens/features.
+
+### Auth Redirect URLs (required for password reset)
+
+Password reset hands the user back to the app through a deep link, and Supabase refuses any redirect target that isn't on its allow-list. In the Dashboard go to **Authentication -> URL Configuration** and add this under **Redirect URLs**:
+
+```
+streaker://**
+```
+
+A bare `streaker://` will **not** match `streaker://reset-password` - entries match exactly unless you use a wildcard, so the `**` matters. If you'd rather be explicit, list the paths instead:
+
+- `streaker://reset-password` - standalone/production builds (matches `"scheme"` in `app.json`)
+- `exp://127.0.0.1:8081/--/reset-password` - Expo Go on a simulator
+- `exp://<your-lan-ip>:8081/--/reset-password` - Expo Go on a device (the URL `npm start` prints)
+
+The app builds this with `Linking.createURL('/reset-password')`, so it differs between Expo Go and a standalone build - which is why the wildcard is the less fiddly option. When the URL in use isn't on the list, `resetPasswordForEmail` doesn't fail: it quietly falls back to the project's **Site URL**, so the symptom is a reset link that opens a browser or a blank page instead of the app.
+
+Registration already uses the same mechanism (`emailRedirectTo` in `useAuthStore.register`), so something may already be listed - the reset path still needs to be covered. Nothing needs deploying for this; it's dashboard config only.
 
 ### Edge Functions
 

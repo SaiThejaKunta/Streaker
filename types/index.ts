@@ -227,6 +227,18 @@ export interface HeatmapDay {
   count: number;
 }
 
+// ---- Auth Deep Links ----
+
+/**
+ * The password-recovery payload carried by a deep link Supabase opened the
+ * app with. Which shape arrives depends on the client's auth flowType.
+ */
+export type RecoveryLink =
+  | { kind: 'session'; accessToken: string; refreshToken: string }
+  | { kind: 'code'; code: string }
+  | { kind: 'token_hash'; tokenHash: string }
+  | { kind: 'error'; message: string };
+
 // ---- Leaderboard ----
 export interface LeaderboardEntry {
   rank: number;

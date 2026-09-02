@@ -174,10 +174,21 @@ export const APP_CONFIG = {
   MIN_STREAK_DAYS: 3,
   MAX_FREEZES_PER_MONTH: 2,
   MAX_GROUP_SIZE: 20,
-  // How many days of check-in history useStreakStore loads. Anything that
-  // renders per-day history (e.g. the profile heatmap) must stay inside this
-  // window, otherwise older days show up as empty instead of as real data.
+  // How many days of check-in history useStreakStore loads for everything
+  // except the heatmap. Anything reading `checkIns` for per-day history must
+  // stay inside this window, otherwise older days show up as empty instead of
+  // as real data. The heatmap has its own, longer window (HEATMAP_DAYS).
   CHECK_IN_HISTORY_DAYS: 30,
+  // How far back the profile heatmap reaches. Deliberately independent of
+  // CHECK_IN_HISTORY_DAYS: loadHeatmapHistory fetches this window on its own,
+  // as four columns of the current user's rows only, so a year of squares
+  // costs nothing at app launch and the general 30-day window above stays
+  // small for everything else.
+  HEATMAP_DAYS: 365,
+  // Rows per page of that fetch. A year times a handful of streaks can exceed
+  // the database's per-request row cap, which truncates silently (#39), so the
+  // fetch pages instead of assuming one request covers it.
+  HEATMAP_PAGE_SIZE: 1000,
   IMAGE_MAX_SIZE_MB: 5,
   IMAGE_QUALITY: 0.8,
 } as const;

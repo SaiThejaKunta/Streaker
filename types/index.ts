@@ -239,6 +239,39 @@ export type RecoveryLink =
   | { kind: 'token_hash'; tokenHash: string }
   | { kind: 'error'; message: string };
 
+/**
+ * The only fields the heatmap needs from a check-in row. The year-long
+ * heatmap query selects exactly these - a year of full rows is a lot of
+ * payload for four fields - and a full CheckIn is assignable to it, so the
+ * store's existing check-ins work as input too.
+ */
+export type HeatmapCheckIn = Pick<
+  CheckIn,
+  'user_id' | 'streak_id' | 'check_in_date' | 'status'
+>;
+
+/** How far the heatmap's own fetch has got. */
+export type HeatmapStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+/** A month name and the week column it should be drawn above. */
+export interface HeatmapMonthLabel {
+  label: string;
+  weekIndex: number;
+}
+
+/**
+ * The profile heatmap laid out the way GitHub's contribution graph is: one
+ * entry in `weeks` per week column, each holding 7 cells indexed by weekday
+ * (0 = Sunday). Cells outside the window are null so they can be drawn blank -
+ * a day with no data must not read as a missed day.
+ */
+export interface HeatmapGrid {
+  weeks: (HeatmapDay | null)[][];
+  months: HeatmapMonthLabel[];
+  total: number;
+}
+
+
 // ---- Leaderboard ----
 export interface LeaderboardEntry {
   rank: number;

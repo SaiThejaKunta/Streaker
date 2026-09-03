@@ -89,9 +89,27 @@ Press `a` to open in Android Emulator, `i` to open in iOS Simulator, or scan the
 
 ---
 
-## 🔔 Additional Setup: Notifications & Redistribution
+## 🔔 Additional Setup: Auth Links, Notifications & Redistribution
 
-Only needed if you're working on push notifications (check-in verification requests, streak invitations) or the missed-day coin redistribution feature. Skip this if you're just working on other screens/features.
+Needed if you're working on password reset, push notifications (check-in verification requests, streak invitations, check-in reminders), or the missed-day coin redistribution feature. Skip this if you're just working on other screens/features.
+
+### Auth Redirect URLs (required for password reset)
+
+Password reset hands the user back to the app through a deep link, and Supabase refuses any redirect target that isn't on its allow-list. In the Dashboard go to **Authentication -> URL Configuration** and add this under **Redirect URLs**:
+
+```
+streaker://**
+```
+
+A bare `streaker://` will **not** match `streaker://reset-password` - entries match exactly unless you use a wildcard, so the `**` matters. If you'd rather be explicit, list the paths instead:
+
+- `streaker://reset-password` - standalone/production builds (matches `"scheme"` in `app.json`)
+- `exp://127.0.0.1:8081/--/reset-password` - Expo Go on a simulator
+- `exp://<your-lan-ip>:8081/--/reset-password` - Expo Go on a device (the URL `npm start` prints)
+
+The app builds this with `Linking.createURL('/reset-password')`, so it differs between Expo Go and a standalone build - which is why the wildcard is the less fiddly option. When the URL in use isn't on the list, `resetPasswordForEmail` doesn't fail: it quietly falls back to the project's **Site URL**, so the symptom is a reset link that opens a browser or a blank page instead of the app.
+
+Registration already uses the same mechanism (`emailRedirectTo` in `useAuthStore.register`), so something may already be listed - the reset path still needs to be covered. Nothing needs deploying for this; it's dashboard config only.
 
 ### Edge Functions
 
@@ -104,19 +122,27 @@ npx supabase functions deploy redistribute-missed-days
 npx supabase functions deploy notify-verification-request
 npx supabase functions deploy notify-invitation
 npx supabase functions deploy notify-invitation-accepted
-```
+npx supabase functions deploy redistribute-missed-days
+npx supabase functions deploy notify-verification-request
+npx supabase functions deploy notify-invitation
+npx supabase functions deploy notify-invitation-accepted
+npx supabase functions deploy remind-pending-checkins
+
 
 ### Database Webhooks (for push notifications)
 
-In the Supabase Dashboard, go to **Database -> Webhooks** and create two webhooks, both type "Supabase Edge Functions":
+In the Supabase Dashboard, go to **Database -> Webhooks** and create three webhooks, all type "Supabase Edge Functions":
 - Table `activities`, event **Insert** -> function `notify-verification-request`
 - Table `invitations`, event **Insert** -> function `notify-invitation`
+- Table `invitations`, event **Update** -> function `notify-invitation-accepted`
 
-### Cron Job (for coin redistribution)
+### Cron Jobs (for coin redistribution and check-in reminders)
 
-In the Dashboard, go to **Integrations -> Cron** (installs the `pg_net` extension if you haven't already) and create a job:
-- Schedule: `0 0 * * *` (daily, UTC midnight)
-- Type: **Supabase Edge Functions** -> `redistribute-missed-days`
+In the Dashboard, go to **Integrations -> Cron** (installs the `pg_net` extension if you haven't already) and create two jobs:
+- Schedule: `0 0 * * *` (daily, UTC midnight) - type **Supabase Edge Functions** -> `redistribute-missed-days`
+- Schedule: `0 9,15,21 * * *` (3x/day, UTC 09:00/15:00/21:00) - type **Supabase Edge Functions** -> `remind-pending-checkins`
+
+The reminder times are a pragmatic default, not a precise one - there's no per-user timezone stored (same tradeoff as the redistribution cron, documented in `supabase/schema.sql`), so these are fixed UTC times rather than "3x during each user's own day." Adjust the cron schedule if you want a different spread.
 
 ### Push Notification Credentials (Android)
 

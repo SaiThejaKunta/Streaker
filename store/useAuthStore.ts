@@ -5,7 +5,7 @@
 import { create } from 'zustand';
 import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
-import type { User, RegisterForm, LoginForm } from '../types';
+import type { User, RegisterForm, LoginForm, RecoveryLink } from '../types';
 import { COINS } from '../utils/constants';
 import { getAuthErrorMessage } from '../utils/helpers';
 
@@ -27,6 +27,10 @@ interface AuthState {
   setUser: (user: User) => void;
   hydrate: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<boolean>;
+  redeemRecoveryLink: (link: RecoveryLink) => Promise<boolean>;
+  completePasswordReset: (newPassword: string) => Promise<boolean>;
+  abandonPasswordRecovery: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -65,6 +69,89 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (e) {
       set({ isHydrated: true });
     }
+  },
+
+  requestPasswordReset: async (email: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        // Same Linking.createURL shape register already uses for emailRedirectTo,
+        // so both auth emails come back into the app the same way.
+        redirectTo: Linking.createURL('/reset-password'),
+      });
+      if (error) throw error;
+      set({ isLoading: false });
+      return true;
+    } catch (err: any) {
+      set({ error: getAuthErrorMessage(err), isLoading: false });
+      return false;
+    }
+  },
+
+  redeemRecoveryLink: async (link: RecoveryLink) => {
+    set({ isLoading: true, error: null });
+    try {
+      if (link.kind === 'error') throw new Error(link.message);
+
+      if (link.kind === 'session') {
+        const { error } = await supabase.auth.setSession({
+          access_token: link.accessToken,
+          refresh_token: link.refreshToken,
+        });
+        if (error) throw error;
+      } else if (link.kind === 'code') {
+        const { error } = await supabase.auth.exchangeCodeForSession(link.code);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.verifyOtp({
+          type: 'recovery',
+          token_hash: link.tokenHash,
+        });
+        if (error) throw error;
+      }
+
+      set({ isLoading: false });
+      return true;
+    } catch (err: any) {
+      set({ error: getAuthErrorMessage(err), isLoading: false });
+      return false;
+    }
+  },
+
+  completePasswordReset: async (newPassword: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+
+      // The recovery session was minted by an email link, not by the password.
+      // Signing out means the new password is what actually gets them back in,
+      // and avoids leaving a half-initialised session the store never hydrated.
+      // auth-js returns sign-out failures rather than throwing, so this can't
+      // be left to the catch - and the password itself did change either way,
+      // so a failure here is worth a warning, not a failed reset.
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) {
+        console.warn('completePasswordReset: sign-out after reset failed:', signOutError.message);
+      }
+      set({ user: null, isAuthenticated: false, isLoading: false });
+      return true;
+    } catch (err: any) {
+      set({ error: getAuthErrorMessage(err), isLoading: false });
+      return false;
+    }
+  },
+
+  abandonPasswordRecovery: async () => {
+    // Redeeming a recovery link mints a real session and persists it to
+    // AsyncStorage. Walking away from the screen without choosing a password
+    // would leave that session behind, and the next cold start's hydrate()
+    // would sign the user straight in having never entered a password.
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.warn('abandonPasswordRecovery: sign-out failed:', error.message);
+    }
+    set({ user: null, isAuthenticated: false });
   },
 
   login: async (form: LoginForm) => {

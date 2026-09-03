@@ -3,7 +3,16 @@
 // ============================================================
 
 import { MOTIVATIONAL_QUOTES, COINS, APP_CONFIG } from './constants';
-import type { DayStatus, CalendarDay, CheckIn, HeatmapDay } from '../types';
+import type {
+  DayStatus,
+  CalendarDay,
+  CheckIn,
+  HeatmapCheckIn,
+  HeatmapDay,
+  HeatmapGrid,
+  HeatmapMonthLabel,
+  RecoveryLink,
+} from '../types';
 
 // ---- Date Helpers ----
 
@@ -92,6 +101,20 @@ export function formatDateShort(dateStr: string): string {
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
+  });
+}
+
+/**
+ * Format a date string with its weekday: "Tue, Sep 1, 2026". Used where the
+ * weekday is part of the information, e.g. the heatmap's selected-day caption.
+ */
+export function formatDateWithWeekday(dateStr: string): string {
+  const date = parseDate(dateStr);
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
   });
 }
 
@@ -209,7 +232,7 @@ export function buildCalendarDays(
  * day in would claim credit the user never got.
  */
 export function buildHeatmapDays(
-  checkIns: CheckIn[],
+  checkIns: HeatmapCheckIn[],
   userId: string,
   days: number,
   endDate: string = getToday()
@@ -234,6 +257,136 @@ export function buildHeatmapDays(
   }
 
   return result;
+}
+
+// ---- Auth Link Helpers ----
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    // A malformed escape shouldn't take the whole reset flow down with it.
+    return value;
+  }
+}
+
+function parseUrlParams(segment: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  for (const pair of segment.split('&')) {
+    if (!pair) continue;
+    const eq = pair.indexOf('=');
+    const rawKey = eq === -1 ? pair : pair.slice(0, eq);
+    const rawValue = eq === -1 ? '' : pair.slice(eq + 1);
+    if (!rawKey) continue;
+    // '+' means space in a form-encoded value; decodeURIComponent leaves it as-is.
+    params[safeDecode(rawKey)] = safeDecode(rawValue.replace(/\+/g, ' '));
+  }
+  return params;
+}
+
+/**
+ * Pull the password-recovery payload out of the deep link Supabase opened the
+ * app with. The token's shape depends on the client's auth flowType and can
+ * arrive in either the query string or the URL fragment, so every shape is
+ * handled rather than betting on one. Note that expo-router only surfaces
+ * query params, never the fragment, which is why this takes the whole URL.
+ *
+ * Returns null for anything that isn't a recovery link - including a
+ * confirmation link for a different auth flow, which must not land the user
+ * on a "choose a new password" screen.
+ */
+export function parseRecoveryLink(url: string | null | undefined): RecoveryLink | null {
+  if (!url) return null;
+
+  const hashIndex = url.indexOf('#');
+  const fragment = hashIndex === -1 ? '' : url.slice(hashIndex + 1);
+  const beforeFragment = hashIndex === -1 ? url : url.slice(0, hashIndex);
+  const queryIndex = beforeFragment.indexOf('?');
+  const query = queryIndex === -1 ? '' : beforeFragment.slice(queryIndex + 1);
+
+  // Fragment last so it wins: that's where implicit-flow tokens live.
+  const params = { ...parseUrlParams(query), ...parseUrlParams(fragment) };
+
+  if (params.error || params.error_description) {
+    return {
+      kind: 'error',
+      message:
+        params.error_description || params.error || 'This reset link is no longer valid.',
+    };
+  }
+
+  if (params.type && params.type !== 'recovery') return null;
+
+  if (params.access_token && params.refresh_token) {
+    return {
+      kind: 'session',
+      accessToken: params.access_token,
+      refreshToken: params.refresh_token,
+    };
+  }
+  if (params.code) return { kind: 'code', code: params.code };
+  if (params.token_hash) return { kind: 'token_hash', tokenHash: params.token_hash };
+
+  return null;
+}
+
+/**
+ * Lay a run of heatmap days out the way GitHub lays out its contribution
+ * graph: one column per week, each column holding 7 cells indexed by weekday
+ * (0 = Sunday). `days` must be oldest-first and contiguous - what
+ * buildHeatmapDays returns.
+ *
+ * Cells before the first day or after the last are null rather than
+ * zero-count days, so the component can leave them blank instead of drawing
+ * them as days the user missed.
+ */
+export function buildHeatmapGrid(days: HeatmapDay[]): HeatmapGrid {
+  if (days.length === 0) return { weeks: [], months: [], total: 0 };
+
+  const byDate = new Map(days.map((day) => [day.date, day]));
+  const firstDate = days[0].date;
+  const lastDate = days[days.length - 1].date;
+  // Back up to the Sunday of the first day's week so every row is one weekday.
+  const firstSunday = addDays(firstDate, -parseDate(firstDate).getDay());
+
+  const weeks: (HeatmapDay | null)[][] = [];
+  // Lexicographic compare is date order for YYYY-MM-DD, and addDays goes
+  // through parseDate/setDate rather than millisecond arithmetic, so a DST
+  // transition inside the window can't shift a column by a day.
+  for (let sunday = firstSunday; sunday <= lastDate; sunday = addDays(sunday, 7)) {
+    const week: (HeatmapDay | null)[] = [];
+    for (let weekday = 0; weekday < 7; weekday++) {
+      week.push(byDate.get(addDays(sunday, weekday)) ?? null);
+    }
+    weeks.push(week);
+  }
+
+  const months: HeatmapMonthLabel[] = [];
+  let labelledMonth = -1;
+  for (const [weekIndex, week] of weeks.entries()) {
+    // A column belongs to the month of its earliest in-window day, so a week
+    // straddling a month boundary is labelled by the month it opens in.
+    const firstDay = week.find((cell) => cell !== null);
+    if (!firstDay) continue;
+    const date = parseDate(firstDay.date);
+    if (date.getMonth() === labelledMonth) continue;
+    labelledMonth = date.getMonth();
+    months.push({
+      label: date.toLocaleDateString('en-US', { month: 'short' }),
+      weekIndex,
+    });
+  }
+  // Only the first label can land next to its neighbour: the window can open
+  // in the last days of a month, giving it one column to itself, while a whole
+  // month always spans four or more. Drop it rather than draw two names on top
+  // of each other - the leftmost column is a partial week anyway.
+  if (months.length > 1 && months[1].weekIndex - months[0].weekIndex < 2) {
+    months.shift();
+  }
+
+  const total = days.reduce((sum, day) => sum + day.count, 0);
+
+  return { weeks, months, total };
 }
 
 // ---- Coin Helpers ----
